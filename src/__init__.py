@@ -1,29 +1,32 @@
-# src/__init__.py
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_cors import CORS
-from config import config
+from .config import Config 
+import os
 
-# Initialize extensions, but don't tie them to an app yet
+# Initialize SQLAlchemy outside the create_app function
 db = SQLAlchemy()
 
-def create_app(config_name='default'):
-    """
-    Application factory function.
-    """
+def create_app(config_class=Config):
+    # 1. Application Setup
     app = Flask(__name__)
-    
-    # Load configuration from config.py
-    app.config.from_object(config[config_name])
+    # Load configuration from the specified class (defaulting to Config)
+    app.config.from_object(config_class)
 
-    # Initialize extensions with the app
+    # 2. Database Initialization
     db.init_app(app)
-    
-    # Enable CORS for the frontend
-    CORS(app) 
 
-    # Register API blueprints
+    # 3. Register Blueprints (Routes)
     from .routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
+
+    # 4. Import Models (Required to create the database tables)
+    # This line ensures SQLAlchemy knows about all your classes (Property, Unit, etc.)
+    from . import models 
+
+    # 5. Database Table Creation (Inside application context)
+    # This is useful for initial setup and testing (using SQLite)
+    with app.app_context():
+        # Only create tables if the database doesn't exist
+        db.create_all()
 
     return app
