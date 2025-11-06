@@ -167,6 +167,37 @@ def move_out(id):
     return jsonify({'message': 'Move-out successful'}), 200
 
 
+@main.route('/occupancy/<int:id>/rent-change', methods=['POST'])
+def rent_change(id):
+    """
+    Log a new rent amount for an occupancy with an effective date.
+    Expected JSON: { "new_rent": <int>, "effective_date": "YYYY-MM-DD" }
+    """
+    data = request.json
+    if not data or 'new_rent' not in data or 'effective_date' not in data:
+        return jsonify({'error': 'new_rent and effective_date are required'}), 400
+
+    occ = Occupancy.query.get(id)
+    if not occ:
+        return jsonify({'error': 'Occupancy not found'}), 404
+
+    try:
+        eff_date = date.fromisoformat(data['effective_date'])
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    # Create new Rent record
+    rent = Rent(
+        occupancy_id=occ.id,
+        amount=data['new_rent'],
+        effective_date=eff_date
+    )
+    db.session.add(rent)
+    db.session.commit()
+
+    return jsonify({'message': 'Rent change logged', 'rent_id': rent.id}), 201
+
+
 # --- Reporting Routes ---
 
 @main.route('/reports/rent-roll', methods=['GET'])

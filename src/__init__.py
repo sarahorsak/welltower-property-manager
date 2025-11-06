@@ -1,12 +1,18 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-import os
-from .config import Config
+from .config import Config, TestingConfig
 
 # Initialize SQLAlchemy outside the create_app function
 db = SQLAlchemy()
 
-def create_app(config_class=Config):
+def create_app(config_class=Config, config_name=None):
+    # map friendly names to classes
+    if config_name:
+        if config_name == 'testing':
+            config_class = TestingConfig
+        else:
+            config_class = config_name   # allow import path string fallback
+    
     # 1. Application Setup
     app = Flask(__name__)
     # Load configuration from the specified class (defaulting to Config)

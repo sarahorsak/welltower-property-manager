@@ -16,7 +16,6 @@ def setup_property_unit_resident(db_session, prop_name="T1", unit_num="U1", res_
     return prop, unit, res
 
 # --- Testing generate_rent_roll ---
-
 def test_logic_rent_roll_basic_occupancy(db_session):
     """Test a simple 3-day occupancy period."""
     prop, unit, res = setup_property_unit_resident(db_session)
@@ -131,8 +130,8 @@ def test_logic_kpi_calculation(db_session):
     db_session.add_all([unit2, res2])
     db_session.commit()
     
-    # Unit 1: Occupied for all 30 days of June
-    occ1 = Occupancy(resident=res1, unit=unit1, move_in_date=date(2024, 6, 1))
+    # Unit 1: Occupied before the KPI month so only the move-out happens in June
+    occ1 = Occupancy(resident=res1, unit=unit1, move_in_date=date(2024, 5, 1))
     rent1 = Rent(occupancy=occ1, amount=100, effective_date=date(2024, 6, 1))
     
     # Unit 2: Moves in June 16 (15 days occupied: 16th to 30th)

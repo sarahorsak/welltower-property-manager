@@ -98,24 +98,20 @@ def calculate_kpis(property_id, start_date, end_date):
             kpi_data['total_units_days'] += 1
             if record['resident_id'] is not None:
                 kpi_data['occupied_days'] += 1
-        
-        # Calculate Movements (Move-ins/Move-outs)
-        prev_resident_id = previous_state.get(key, {}).get('resident_id')
-        
-        if record['resident_id'] and prev_resident_id is None:
-            # Transition from Vacant to Occupied
-            kpi_data['move_ins'] += 1
-        elif record['resident_id'] is None and prev_resident_id:
-            # Transition from Occupied to Vacant
-            kpi_data['move_outs'] += 1
-            
-        # Update previous state for the next day's comparison
-        previous_state[key] = {
-            'resident_id': record['resident_id'],
-            'unit_status': record['unit_status']
-        }
 
-    # 3. Final Calculation (Occupancy Rate)
+        
+    occs = Occupancy.query.join(Unit).filter(Unit.property_id == property_id).all()
+
+    for occ in occs:
+            if occ.move_in_date and start_date <= occ.move_in_date <= end_date:
+                mk = occ.move_in_date.strftime('%Y-%m')
+                kpis_by_month[mk]['move_ins'] += 1
+
+            if occ.move_out_date and start_date <= occ.move_out_date <= end_date:
+                mk = occ.move_out_date.strftime('%Y-%m')
+                kpis_by_month[mk]['move_outs'] += 1
+
+    # 3. Finalize occupancy_rate per month
     final_kpis = {}
     for month, data in kpis_by_month.items():
         data['occupancy_rate'] = (
@@ -123,5 +119,5 @@ def calculate_kpis(property_id, start_date, end_date):
             if data['total_units_days'] > 0 else 0.0
         )
         final_kpis[month] = data
-        
+
     return final_kpis

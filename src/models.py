@@ -1,6 +1,7 @@
 # src/models.py
 from . import db
 from datetime import date
+from sqlalchemy import desc
 
 class Property(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -70,25 +71,13 @@ class Occupancy(db.Model):
     rent_history = db.relationship('Rent', back_populates='occupancy', 
                                    order_by='Rent.effective_date', lazy='dynamic')
 
-    def get_rent_on_date(self, on_date):
-            """Finds the effective rent for this occupancy on a specific date."""
-            # 1. Check if the date is within the occupancy period
-            if on_date < self.move_in_date:
-                return 0
-            if self.move_out_date and on_date >= self.move_out_date:
-                return 0
-                
-            # 2. Find the MOST RECENT Rent record where effective_date <= on_date
-            rent = self.rent_history.filter(Rent.effective_date <= on_date) \
-                                .order_by(Rent.effective_date.desc()) \
-                                .first()
-            
-            # Validation: An occupancy should always have an initial rent.
-            if rent is None:
-                # This should only happen if initial rent wasn't set, which POST /move-in prevents.
-                return 0 
+    def get_rent_on_date(self, target_date):
+        rent_record = Rent.query.filter(
+            Rent.occupancy_id == self.id,
+            Rent.effective_date <= target_date
+        ).order_by(desc(Rent.effective_date)).first()
 
-            return rent.amount
+        return rent_record.amount if rent_record else 0
 
 class Rent(db.Model):
     """Tracks rent changes over time for a specific occupancy."""
