@@ -17,32 +17,42 @@ def db_session(app):
 
     Uses an explicit connection/transaction and a scoped_session bound
     to that connection so sqlite:///:memory: tables persist for the
-    duration of the test.
+    duration of the test. Restores the original Flask-SQLAlchemy session
+    on teardown to avoid leaving db.session pointing at a closed connection.
     """
     with app.app_context():
-        # Acquire a connection and begin a transaction on it.
+        # Keep the original session so we can restore it later
+        original_session = db.session
+
+        # 1) Acquire a connection and begin a transaction on it.
         connection = db.engine.connect()
         transaction = connection.begin()
 
-        # Create a session factory bound to the connection and a scoped_session.
+        # 2) Create a session factory bound to this connection and a scoped_session.
         session_factory = sessionmaker(bind=connection)
         Session = scoped_session(session_factory)
 
-        # Create all tables on the same connection (important for in-memory sqlite).
+        # 3) Create all tables on the same connection (important for in-memory sqlite).
         db.metadata.create_all(bind=connection)
 
-        # Patch Flask-SQLAlchemy to use our scoped session for the test.
+        # 4) Patch Flask-SQLAlchemy to use our scoped session for the duration of the test.
         db.session = Session
-        # Provide session_factory attribute in case code expects it.
         setattr(db, "session_factory", session_factory)
 
         try:
             yield Session()
         finally:
-            # Teardown: remove scoped session, rollback outer transaction, close connection.
+            # 5) Teardown: remove scoped session, rollback transaction, close connection,
+            #    and restore original Flask-SQLAlchemy session so other tests using client work.
             Session.remove()
             transaction.rollback()
             connection.close()
+
+            # restore the original session object the extension provided
+            db.session = original_session
+            # remove any test-added attribute to avoid surprising globals
+            if hasattr(db, "session_factory"):
+                delattr(db, "session_factory")
 
 @pytest.fixture(scope='function')
 def client(app):

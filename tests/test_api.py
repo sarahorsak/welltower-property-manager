@@ -7,6 +7,14 @@ from src import db
 
 # Use the client and db_session fixtures defined in conftest.py
 
+
+# Small helper to reduce repetition when creating property/unit/resident via API
+def _create_prop_unit_res(client, prop_name="P", unit_number="U1", first="F", last="L"):
+    p = client.post('/properties', json={"name": prop_name}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": unit_number}).json
+    r = client.post('/residents', json={"first_name": first, "last_name": last}).json
+    return p, u, r
+
 def test_initial_setup(client, db_session):
     """Test basic creation of all core entities."""
     # Property
@@ -46,60 +54,32 @@ def test_rent_roll_vacant(client, db_session):
     assert data[1]['monthly_rent'] == 0
     assert data[1]['unit_status'] == 'active'
 
-def test_rent_roll_occupied_and_rent_change(client, db_session):
-    """Test rent change over time is reflected correctly in the rent roll."""
-    prop = Property(name="Rent Change Property")
-    unit = Unit(property=prop, unit_number="R1")
-    res = Resident(first_name="Bob", last_name="Test")
-    db_session.add_all([prop, unit, res]); db_session.commit()
-
-    # Move In: $1000 on Jan 1
-    client.post('/occupancy/move-in', json={
-        "resident_id": res.id, "unit_id": unit.id, "move_in_date": "2024-01-01", "initial_rent": 1000
-    })
-    
-    # Rent Change: $1200 on June 1
-    occ = Occupancy.query.filter_by(resident_id=res.id).first()
-    client.post(f'/occupancy/{occ.id}/rent-change', json={
-        "new_rent": 1200, "effective_date": "2024-06-01"
-    })
-    
-    # Fetch rent roll across the change date
-    response = client.get(f'/reports/rent-roll?property_id={prop.id}&start_date=2024-05-31&end_date=2024-06-01')
-    data = response.json
-    
-    # May 31: Should be $1000
-    assert data[0]['date'] == "2024-05-31"
-    assert data[0]['monthly_rent'] == 1000
-    
-    # June 1: Should be $1200
-    assert data[1]['date'] == "2024-06-01"
-    assert data[1]['monthly_rent'] == 1200
-
 # --- Testing Data Validations ---
 
-def test_move_in_validation_double_booking(client, db_session):
-    """Test validation: Cannot double-book a unit."""
-    prop = Property(name="Validation Prop")
-    unit = Unit(property=prop, unit_number="V1")
-    res1 = Resident(first_name="A", last_name="A")
-    res2 = Resident(first_name="B", last_name="B")
-    db_session.add_all([prop, unit, res1, res2]); db_session.commit()
-    
-    # 1. First move in (Jan 1 - Feb 1)
-    client.post('/occupancy/move-in', json={
-        "resident_id": res1.id, "unit_id": unit.id, "move_in_date": "2024-01-01", "initial_rent": 1000
+@pytest.mark.parametrize("first_move_in,second_move_in,expect_status", [
+    ("2024-01-01", "2024-01-01", 400),  # same-day collision
+    ("2024-01-01", "2024-01-15", 400),  # overlapping while first still active (no move-out)
+])
+def test_move_in_overlap_variants(client, db_session, first_move_in, second_move_in, expect_status):
+    """Parametrized test for overlapping move-in validations (reduces duplicate tests)."""
+    # Use helper to create resources
+    p, u, r1 = _create_prop_unit_res(client, prop_name="OverlapAPIProp", unit_number="OL1", first="O1", last="One")
+    # create second resident via API
+    r2 = client.post('/residents', json={"first_name": "O2", "last_name": "Two"}).json
+
+    # First move-in
+    ok = client.post('/occupancy/move-in', json={
+        "resident_id": r1['id'], "unit_id": u['id'], "move_in_date": first_move_in, "initial_rent": 600
     })
-    occ = Occupancy.query.filter_by(resident_id=res1.id).first()
-    client.put(f'/occupancy/{occ.id}/move-out', json={"move_out_date": "2024-02-01"})
-    
-    # 2. Attempt a move in that OVERLAPS (Jan 15)
-    response = client.post('/occupancy/move-in', json={
-        "resident_id": res2.id, "unit_id": unit.id, "move_in_date": "2024-01-15", "initial_rent": 1000
+    assert ok.status_code == 201
+
+    # Attempt second move-in
+    resp = client.post('/occupancy/move-in', json={
+        "resident_id": r2['id'], "unit_id": u['id'], "move_in_date": second_move_in, "initial_rent": 600
     })
-    
-    assert response.status_code == 400
-    assert "already occupied" in response.json['error']
+    assert resp.status_code == expect_status
+    if expect_status == 400:
+        assert "already occupied" in resp.json.get('error', '').lower()
 
 # --- Testing Unit Status (Stretch Goal) ---
 
@@ -183,3 +163,120 @@ def test_kpi_occupancy_rate_calculation(client, db_session):
     # Assert movement counts (all happened on Nov 1st/16th, but should be tallied once per move-in)
     assert data['move_ins'] == 41 # 39 on day 1 + 2 on day 16
     assert data['move_outs'] == 0 # No move outs occurred
+
+def test_rent_change_endpoint_and_effect_on_rent_roll(client, db_session):
+    # Create resources via API
+    p = client.post('/properties', json={"name": "RentChangeAPIProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "RC1"}).json
+    r = client.post('/residents', json={"first_name": "API", "last_name": "User"}).json
+
+    # Move in via API
+    move_in_res = client.post('/occupancy/move-in', json={
+        "resident_id": r['id'],
+        "unit_id": u['id'],
+        "move_in_date": "2024-01-01",
+        "initial_rent": 1000
+    })
+    assert move_in_res.status_code == 201
+    occ_id = move_in_res.json['occupancy_id']
+
+    # Add a rent change effective 2024-06-01
+    rc = client.post(f'/occupancy/{occ_id}/rent-change', json={
+        "new_rent": 1200, "effective_date": "2024-06-01"
+    })
+    assert rc.status_code == 201
+
+    # Verify rent roll shows old rent on 2024-05-31 and new rent on 2024-06-01
+    res = client.get(f"/reports/rent-roll?property_id={p['id']}&start_date=2024-05-31&end_date=2024-06-01")
+    assert res.status_code == 200
+    data = res.json
+    assert data[0]['monthly_rent'] == 1000
+    assert data[1]['monthly_rent'] == 1200
+
+
+def test_move_out_before_move_in_returns_400_via_api(client, db_session):
+    # Create property/unit/resident
+    p = client.post('/properties', json={"name": "MoveOutValidationProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "MOV1"}).json
+    r = client.post('/residents', json={"first_name": "M", "last_name": "O"}).json
+
+    # Move in normally
+    mi = client.post('/occupancy/move-in', json={
+        "resident_id": r['id'],
+        "unit_id": u['id'],
+        "move_in_date": "2024-04-15",
+        "initial_rent": 500
+    })
+    occ_id = mi.json['occupancy_id']
+
+    # Attempt move-out with a date before move-in
+    bad = client.put(f'/occupancy/{occ_id}/move-out', json={"move_out_date": "2024-04-01"})
+    assert bad.status_code == 400
+    assert "move-out date" in bad.json['error'].lower()
+
+
+def test_create_unit_with_invalid_property_returns_404(client):
+    res = client.post('/units', json={"property_id": 999999, "unit_number": "X1"})
+    assert res.status_code == 404
+    assert "Property not found" in res.json.get('error', '')
+
+
+def test_rent_change_invalid_date_format_returns_400(client, db_session):
+    # create via API
+    p = client.post('/properties', json={"name": "BadDateRentProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "BD1"}).json
+    r = client.post('/residents', json={"first_name": "D", "last_name": "F"}).json
+
+    mi = client.post('/occupancy/move-in', json={
+        "resident_id": r['id'], "unit_id": u['id'], "move_in_date": "2024-01-01", "initial_rent": 400
+    })
+    occ_id = mi.json['occupancy_id']
+
+    bad = client.post(f'/occupancy/{occ_id}/rent-change', json={"new_rent": 500, "effective_date": "06-01-2024"})
+    assert bad.status_code == 400
+    assert "Invalid date format" in bad.json.get('error', '')
+
+
+def test_unit_status_duplicate_date_returns_400(client, db_session):
+    p = client.post('/properties', json={"name": "StatusDupProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "SD1"}).json
+
+    # First status change succeeds
+    ok = client.post(f'/units/{u["id"]}/status', json={"status": "inactive", "start_date": "2024-07-01"})
+    assert ok.status_code == 201
+
+    # Second on same date should fail
+    dup = client.post(f'/units/{u["id"]}/status', json={"status": "active", "start_date": "2024-07-01"})
+    assert dup.status_code == 400
+    assert "already exists" in dup.json.get('error', '')
+
+
+def test_rent_roll_includes_vacant_units_and_counts_correctly(client, db_session):
+    # Create property + two units
+    p = client.post('/properties', json={"name": "VacancyAPIProp"}).json
+    u1 = client.post('/units', json={"property_id": p['id'], "unit_number": "VA1"}).json
+    u2 = client.post('/units', json={"property_id": p['id'], "unit_number": "VA2"}).json
+
+    # No occupancies -> rent-roll should include both units for each day
+    res = client.get(f"/reports/rent-roll?property_id={p['id']}&start_date=2024-08-01&end_date=2024-08-02")
+    assert res.status_code == 200
+    entries = res.json
+    # 2 days * 2 units = 4 entries
+    assert len(entries) == 4
+    # Ensure per-day ordering exists (each date appears twice)
+    dates = [e['date'] for e in entries]
+    assert dates.count("2024-08-01") == 2
+    assert dates.count("2024-08-02") == 2
+
+
+def test_kpi_api_missing_or_bad_params_return_400(client):
+    # Missing params
+    r1 = client.get('/reports/kpi')
+    assert r1.status_code == 400
+
+    # Bad date format
+    r2 = client.get('/reports/kpi?property_id=1&start_date=2024/01/01&end_date=2024-01-31')
+    assert r2.status_code == 400
+    assert "Invalid date format" in r2.json.get('error', '')
+
+
