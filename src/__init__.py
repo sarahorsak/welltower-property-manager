@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from .config import Config 
 import os
+from .config import Config
 
 # Initialize SQLAlchemy outside the create_app function
 db = SQLAlchemy()

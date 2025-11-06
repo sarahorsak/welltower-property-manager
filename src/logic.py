@@ -1,6 +1,6 @@
 # src/logic.py (Completed Rent Roll and KPI Logic)
 from .models import Property, Unit, Occupancy
-from datetime import timedelta
+from datetime import timedelta, date
 from collections import defaultdict
 
 def generate_rent_roll(property_id, start_date, end_date):

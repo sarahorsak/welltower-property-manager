@@ -1,5 +1,6 @@
 # src/routes.py
 from flask import request, jsonify, Blueprint
+from sqlalchemy import or_
 from . import db
 from .models import Property, Unit, Resident, Occupancy, Rent, UnitStatus
 from .logic import generate_rent_roll, calculate_kpis

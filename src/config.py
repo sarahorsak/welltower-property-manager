@@ -6,15 +6,17 @@ DB_PATH = os.path.join(BASEDIR, 'app.db')
 
 class Config:
     """Base configuration class."""
-    # Use SQLite for simple file-based database during development/testing
+    # Defaulting to a file-based SQLite database
     SQLALCHEMY_DATABASE_URI = 'sqlite:///' + DB_PATH
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Secret Key is required by Flask for session management, etc.
+    # Secret Key is required by Flask
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'a-very-secret-and-hard-to-guess-string'
 
 class TestingConfig(Config):
     """Configuration used specifically for running Pytest."""
     TESTING = True
-    # Use an in-memory SQLite database for fast, isolated testing
+    # Crucial: Use an in-memory SQLite database for fast, isolated testing
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    # Disabling logging during tests for cleaner output
+    SQLALCHEMY_ECHO = False
