@@ -22,8 +22,8 @@ def create_app(config_class=Config, config_name=None):
     db.init_app(app)
 
     # 3. Register Blueprints (Routes)
-    from .routes import main as main_blueprint
-    app.register_blueprint(main_blueprint)
+    from .routes import register_blueprints
+    register_blueprints(app)
 
     # 4. Import Models (Required to create the database tables)
     # This line ensures SQLAlchemy knows about all your classes (Property, Unit, etc.)

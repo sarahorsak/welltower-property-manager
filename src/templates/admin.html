@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin - Welltower PM</title>
+</head>
+<body>
+  <h1>Welltower Admin</h1>
+
+  <section>
+    <h2>Create Property</h2>
+    <form id="property-form">
+      <input id="property-name" placeholder="Property name" required />
+      <button type="submit">Create</button>
+    </form>
+    <div id="property-msg"></div>
+    <button id="refresh">Refresh properties</button>
+  </section>
+
+  <section>
+    <h2>Create Unit</h2>
+    <select id="unit-property-id"></select>
+    <input id="unit-number" placeholder="Unit number" />
+    <button id="create-unit-btn" type="button">Create Unit</button>
+    <div id="unit-msg"></div>
+  </section>
+
+  <section>
+    <h2>Create Resident</h2>
+    <input id="resident-first" placeholder="First name" />
+    <input id="resident-last" placeholder="Last name" />
+    <button id="create-resident-btn" type="button">Create Resident</button>
+    <div id="resident-msg"></div>
+  </section>
+
+  <section>
+    <h2>Move In</h2>
+    <select id="mi-resident-id"></select>
+    <select id="mi-unit-id"></select>
+    <input id="mi-date" type="date" />
+    <input id="mi-rent" type="number" placeholder="Initial rent" />
+    <button id="move-in-btn" type="button">Move In</button>
+    <div id="mi-msg"></div>
+  </section>
+
+  <section>
+    <h2>Move Out</h2>
+    <label for="mo-occupancy-id">Select occupancy</label>
+    <select id="mo-occupancy-id"></select>
+    <input id="mo-date" type="date" />
+    <button id="move-out-btn" type="button">Move Out</button>
+    <div id="mo-msg"></div>
+  </section>
+
+  <section>
+    <h2>Rent Change</h2>
+    <label for="rc-occupancy-id">Select occupancy</label>
+    <select id="rc-occupancy-id"></select>
+    <input id="rc-date" type="date" />
+    <input id="rc-new-rent" type="number" placeholder="New rent" />
+    <button id="rent-change-btn" type="button">Change Rent</button>
+    <div id="rc-msg"></div>
+  </section>
+
+  <section>
+    <h2>Rent Roll</h2>
+    <select id="rr-prop"></select>
+    <input id="rr-start" type="date" />
+    <input id="rr-end" type="date" />
+    <button id="rr-view-json" type="button">View JSON</button>
+    <button id="rr-download-csv" type="button">Download CSV</button>
+    <pre id="rr-output" style="white-space:pre-wrap; background:#f6f6f6; padding:8px;"></pre>
+  </section>
+
+  <section>
+    <h2>Unit Rent History</h2>
+    <p>View aggregated rent records for a unit (across all occupancies).</p>
+    <label for="ur-prop">Property</label>
+    <select id="ur-prop"></select>
+    <label for="ur-unit">Unit</label>
+    <select id="ur-unit-id"></select>
+    <button id="ur-view-btn" type="button">View Unit Rents</button>
+    <pre id="ur-output" style="white-space:pre-wrap; background:#f6f6f6; padding:8px;"></pre>
+  </section>
+
+  <section>
+    <h2>Unit Status</h2>
+    <p>Set or view unit status (active / inactive) with an effective start date or view status on a date.</p>
+    <label for="us-prop">Property</label>
+    <select id="us-prop"></select>
+    <label for="us-unit-id">Unit</label>
+    <select id="us-unit-id"></select>
+    <label for="us-status">Status</label>
+    <select id="us-status">
+      <option value="active">active</option>
+      <option value="inactive">inactive</option>
+    </select>
+    <label for="us-date">Start date</label>
+    <input id="us-date" type="date" />
+    <button id="us-set-btn" type="button">Set Status</button>
+    <button id="us-get-btn" type="button">Get Status</button>
+    <pre id="us-output" style="white-space:pre-wrap; background:#f6f6f6; padding:8px;"></pre>
+  </section>
+
+  <section>
+    <h2>KPIs</h2>
+    <p>Request KPIs for a property. Move-in/out counts are for a date range. Occupancy rate is for a specific month.</p>
+    <div style="margin-bottom:1em; border-bottom:1px solid #ccc; padding-bottom:1em;">
+      <h3>Move-in/Move-out Counts</h3>
+      <label for="kpi-move-prop">Property</label>
+      <select id="kpi-move-prop"></select>
+      <label for="kpi-move-start">Start</label>
+      <input id="kpi-move-start" type="date" />
+      <label for="kpi-move-end">End</label>
+      <input id="kpi-move-end" type="date" />
+      <button id="kpi-move-btn" type="button">Get Move-in/out Counts</button>
+      <pre id="kpi-move-output" style="white-space:pre-wrap; background:#f6f6f6; padding:8px;"></pre>
+    </div>
+    <div>
+      <h3>Occupancy Rate (Month)</h3>
+      <label for="kpi-occ-prop">Property</label>
+      <select id="kpi-occ-prop"></select>
+      <label for="kpi-occ-month">Month</label>
+      <input id="kpi-occ-month" type="month" />
+      <button id="kpi-occ-btn" type="button">Get Occupancy Rate</button>
+      <pre id="kpi-occ-output" style="white-space:pre-wrap; background:#f6f6f6; padding:8px;"></pre>
+    </div>
+  </section>
+
+  <!-- Occupancy Rent History UI removed: we now provide unit-level rent history instead -->
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>

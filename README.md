@@ -117,3 +117,54 @@ curl -X GET "http://127.0.0.1:5000/reports/rent-roll?property_id=1&start_date=20
 ├── README.md
 ├── Dockerfile
 └── docker-compose.yml
+
+## Additional API Read Endpoints
+
+The project also provides standard GET/read endpoints to make the API discoverable and easy to inspect:
+
+- GET /properties -> list all properties
+- GET /properties/<id> -> property detail
+- GET /properties/<id>/units -> list units in a property
+- GET /units -> list all units (optional ?property_id=)
+- GET /units/<id> -> unit detail (includes current_status when available)
+- GET /residents -> list residents (optional ?property_id=)
+- GET /residents/<id> -> resident detail (includes current occupancy when present)
+- GET /occupancy/<id>/rents -> rent history for an occupancy
+
+These endpoints are covered by integration tests in `tests/test_api.py` (see `test_get_endpoints_list_and_detail` and `test_occupancy_rents_history_endpoint`).
+
+## Quick Examples
+
+Create a property (POST):
+
+```bash
+curl -sS -X POST http://127.0.0.1:5000/properties \
+	-H "Content-Type: application/json" \
+	-d '{"name":"Sunset Gardens"}' | jq
+```
+
+Get all properties (GET):
+
+```bash
+curl -sS http://127.0.0.1:5000/properties | jq
+```
+
+Get rent history for an occupancy (GET):
+
+```bash
+curl -sS http://127.0.0.1:5000/occupancy/1/rents | jq
+```
+
+## Running tests (reminder)
+
+Run the full test suite from project root:
+
+```bash
+pytest -q
+```
+
+Run only API tests:
+
+```bash
+pytest tests/test_api.py -q
+```

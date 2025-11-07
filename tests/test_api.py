@@ -280,3 +280,65 @@ def test_kpi_api_missing_or_bad_params_return_400(client):
     assert "Invalid date format" in r2.json.get('error', '')
 
 
+def test_get_endpoints_list_and_detail(client, db_session):
+    """Test the newly-added GET endpoints for list and detail views."""
+    # Create a property/unit/resident via API
+    p = client.post('/properties', json={"name": "GetTestProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "G1"}).json
+    r = client.post('/residents', json={"first_name": "G", "last_name": "User"}).json
+
+    # GET all properties
+    props = client.get('/properties')
+    assert props.status_code == 200
+    assert any(item['id'] == p['id'] for item in props.json)
+
+    # GET property detail
+    prop_detail = client.get(f"/properties/{p['id']}")
+    assert prop_detail.status_code == 200
+    assert prop_detail.json['id'] == p['id']
+
+    # GET property's units
+    prop_units = client.get(f"/properties/{p['id']}/units")
+    assert prop_units.status_code == 200
+    assert any(u_item['id'] == u['id'] for u_item in prop_units.json)
+
+    # GET units list and unit detail
+    units = client.get('/units')
+    assert units.status_code == 200
+    unit_detail = client.get(f"/units/{u['id']}")
+    assert unit_detail.status_code == 200
+    assert unit_detail.json['id'] == u['id']
+
+    # GET residents list and resident detail
+    residents = client.get('/residents')
+    assert residents.status_code == 200
+    resident_detail = client.get(f"/residents/{r['id']}")
+    assert resident_detail.status_code == 200
+    assert resident_detail.json['id'] == r['id']
+
+
+def test_occupancy_rents_history_endpoint(client, db_session):
+    """Create an occupancy and rent changes, then verify the rents history GET endpoint."""
+    p = client.post('/properties', json={"name": "RentHistoryProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "RH1"}).json
+    r = client.post('/residents', json={"first_name": "RH", "last_name": "Res"}).json
+
+    mi = client.post('/occupancy/move-in', json={
+        "resident_id": r['id'], "unit_id": u['id'], "move_in_date": "2024-01-01", "initial_rent": 900
+    })
+    assert mi.status_code == 201
+    occ_id = mi.json['occupancy_id']
+
+    # Add two rent changes
+    rc1 = client.post(f"/occupancy/{occ_id}/rent-change", json={"new_rent": 1000, "effective_date": "2024-02-01"})
+    rc2 = client.post(f"/occupancy/{occ_id}/rent-change", json={"new_rent": 1100, "effective_date": "2024-03-01"})
+    assert rc1.status_code == 201 and rc2.status_code == 201
+
+    rents = client.get(f"/occupancy/{occ_id}/rents")
+    assert rents.status_code == 200
+    # Expect at least 3 rent records (initial + two changes)
+    assert len(rents.json) >= 3
+    amounts = [r_entry['amount'] for r_entry in rents.json]
+    assert 1000 in amounts and 1100 in amounts
+
+

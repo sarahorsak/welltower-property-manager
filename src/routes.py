@@ -1,10 +1,13 @@
 # src/routes.py
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, Response, render_template
 from sqlalchemy import or_
 from . import db
 from .models import Property, Unit, Resident, Occupancy, Rent, UnitStatus
-from .logic import generate_rent_roll, calculate_kpis
+from .services.rent_roll import generate_rent_roll
+from .services.kpis import calculate_kpis
 from datetime import date
+import csv
+import io
 
 # Use a Blueprint to organize routes
 main = Blueprint('main', __name__)
@@ -31,6 +34,24 @@ def get_properties():
     props = Property.query.all()
     return jsonify([p.to_dict() for p in props]), 200
 
+
+@main.route('/properties/<int:id>', methods=['GET'])
+def get_property(id):
+    prop = Property.query.get(id)
+    if not prop:
+        return jsonify({'error': 'Property not found'}), 404
+    return jsonify(prop.to_dict()), 200
+
+
+@main.route('/properties/<int:id>/units', methods=['GET'])
+def get_property_units(id):
+    prop = Property.query.get(id)
+    if not prop:
+        return jsonify({'error': 'Property not found'}), 404
+
+    units = Unit.query.filter_by(property_id=id).all()
+    return jsonify([u.to_dict() for u in units]), 200
+
 # --- Unit Routes ---
 
 @main.route('/units', methods=['POST'])
@@ -47,6 +68,36 @@ def create_unit():
     db.session.add(unit)
     db.session.commit()
     return jsonify(unit.to_dict()), 201
+
+
+@main.route('/units', methods=['GET'])
+def list_units():
+    # optional filter by property_id
+    property_id = request.args.get('property_id')
+    if property_id:
+        try:
+            pid = int(property_id)
+        except ValueError:
+            return jsonify({'error': 'property_id must be an integer'}), 400
+        units = Unit.query.filter_by(property_id=pid).all()
+    else:
+        units = Unit.query.all()
+    return jsonify([u.to_dict() for u in units]), 200
+
+
+@main.route('/units/<int:id>', methods=['GET'])
+def get_unit(id):
+    unit = Unit.query.get(id)
+    if not unit:
+        return jsonify({'error': 'Unit not found'}), 404
+    # include current status if model supports it
+    data = unit.to_dict()
+    try:
+        # unit.get_status_on_date exists in models; show current status for today
+        data['current_status'] = unit.get_status_on_date(date.today())
+    except Exception:
+        pass
+    return jsonify(data), 200
 
 @main.route('/units/<int:id>/status', methods=['POST'])
 def set_unit_status(id):
@@ -80,6 +131,35 @@ def set_unit_status(id):
     db.session.commit()
     return jsonify({'message': 'Unit status change logged'}), 201
 
+
+@main.route('/units/<int:id>/status', methods=['GET'])
+def get_unit_status(id):
+    """
+    Get the unit's current status and history or the status on a specific date.
+    Query param: date=YYYY-MM-DD (optional). If provided, returns the status on that date.
+    Otherwise returns current_status and full status history for the unit.
+    """
+    unit = Unit.query.get(id)
+    if not unit:
+        return jsonify({'error': 'Unit not found'}), 404
+
+    date_str = request.args.get('date')
+    if date_str:
+        try:
+            qdate = date.fromisoformat(date_str)
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+        status_on_date = unit.get_status_on_date(qdate)
+        return jsonify({'unit_id': id, 'date': qdate.isoformat(), 'status': status_on_date}), 200
+
+    # No date provided: return current status and history
+    current_status = unit.get_status_on_date(date.today())
+    history = []
+    for s in unit.status_history.order_by(UnitStatus.start_date).all():
+        history.append({'id': s.id, 'status': s.status, 'start_date': s.start_date.isoformat()})
+
+    return jsonify({'unit_id': id, 'current_status': current_status, 'history': history}), 200
+
 # --- Resident Routes ---
 
 @main.route('/residents', methods=['POST'])
@@ -92,6 +172,38 @@ def create_resident():
     db.session.add(res)
     db.session.commit()
     return jsonify(res.to_dict()), 201
+
+
+@main.route('/residents', methods=['GET'])
+def list_residents():
+    # optional filter by property_id
+    property_id = request.args.get('property_id')
+    if property_id:
+        try:
+            pid = int(property_id)
+        except ValueError:
+            return jsonify({'error': 'property_id must be an integer'}), 400
+        # join via Occupancy->Unit to find residents in a property
+        residents = Resident.query.join(Occupancy, isouter=True).join(Unit, isouter=True).filter(Unit.property_id == pid).all()
+    else:
+        residents = Resident.query.all()
+    return jsonify([r.to_dict() for r in residents]), 200
+
+
+@main.route('/residents/<int:id>', methods=['GET'])
+def get_resident(id):
+    res = Resident.query.get(id)
+    if not res:
+        return jsonify({'error': 'Resident not found'}), 404
+    # include current occupancy if present
+    data = res.to_dict()
+    try:
+        occ = Occupancy.query.filter_by(resident_id=res.id, move_out_date=None).first()
+        if occ:
+            data['current_occupancy'] = occ.to_dict()
+    except Exception:
+        pass
+    return jsonify(data), 200
 
 
 # --- Core Business Logic Routes ---
@@ -198,6 +310,36 @@ def rent_change(id):
     return jsonify({'message': 'Rent change logged', 'rent_id': rent.id}), 201
 
 
+@main.route('/occupancy/<int:id>/rents', methods=['GET'])
+def occupancy_rents(id):
+    occ = Occupancy.query.get(id)
+    if not occ:
+        return jsonify({'error': 'Occupancy not found'}), 404
+    rents = Rent.query.filter_by(occupancy_id=id).order_by(Rent.effective_date).all()
+    return jsonify([{'id': r.id, 'amount': r.amount, 'effective_date': r.effective_date.isoformat()} for r in rents]), 200
+
+
+# --- Occupancy list (support for admin UI) ---
+@main.route('/occupancies', methods=['GET'])
+def list_occupancies():
+    """Return all occupancies with related unit/resident info for admin UI."""
+    occs = Occupancy.query.order_by(Occupancy.move_in_date).all()
+    out = []
+    for o in occs:
+        unit = Unit.query.get(o.unit_id)
+        resident = Resident.query.get(o.resident_id)
+        out.append({
+            'id': o.id,
+            'unit_id': o.unit_id,
+            'unit_number': unit.unit_number if unit else None,
+            'resident_id': o.resident_id,
+            'resident_name': f"{resident.first_name} {resident.last_name}" if resident else None,
+            'move_in_date': o.move_in_date.isoformat() if o.move_in_date else None,
+            'move_out_date': o.move_out_date.isoformat() if o.move_out_date else None,
+        })
+    return jsonify(out), 200
+
+
 # --- Reporting Routes ---
 
 @main.route('/reports/rent-roll', methods=['GET'])
@@ -214,14 +356,33 @@ def get_rent_roll():
         end_dt = date.fromisoformat(end_date)
         prop_id = int(property_id)
     except (ValueError, TypeError):
-        return jsonify({'error': 'Invalid format for dates (YYYY-MM-DD) or property_id (integer)'}), 400
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD for dates and integer for property_id'}), 400
 
     # Validation: end_date must be on or after start_date
     if end_dt < start_dt:
         return jsonify({'error': 'End date must be on or after start date.'}), 400
         
     rent_roll_data = generate_rent_roll(prop_id, start_dt, end_dt)
-    
+    # Support CSV download when format=csv is provided
+    fmt = request.args.get('format')
+    if fmt == 'csv':
+        # Create CSV in-memory
+        output = io.StringIO()
+        writer = None
+        for row in rent_roll_data:
+            if writer is None:
+                # header from keys
+                writer = csv.DictWriter(output, fieldnames=list(row.keys()))
+                writer.writeheader()
+            writer.writerow(row)
+        csv_data = output.getvalue()
+        output.close()
+        headers = {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename="rent_roll_{prop_id}_{start_dt.isoformat()}_{end_dt.isoformat()}.csv"'
+        }
+        return Response(csv_data, headers=headers)
+
     return jsonify(rent_roll_data), 200
 
 # --- KPI API (Stretch Goal) ---
@@ -230,18 +391,63 @@ def get_rent_roll():
 def get_kpis():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    property_id = request.args.get('property_id') # Added property scope for realism
-    
+    property_id = request.args.get('property_id')
+
     if not all([start_date, end_date, property_id]):
         return jsonify({'error': 'start_date, end_date, and property_id are required'}), 400
-        
+
     try:
         start_dt = date.fromisoformat(start_date)
         end_dt = date.fromisoformat(end_date)
         prop_id = int(property_id)
-    except ValueError:
-        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD for dates and integer for property_id'}), 400
 
-    kpi_data = calculate_kpis(prop_id, start_dt, end_dt)
-    
-    return jsonify(kpi_data), 200
+    kpis = calculate_kpis(prop_id, start_dt, end_dt)
+    return jsonify(kpis), 200
+
+
+@main.route('/admin', methods=['GET'])
+def admin_ui():
+    # Admin UI served from templates/admin.html and static/admin.js
+    return render_template('admin.html')
+
+
+# --- Unit-level aggregated rent history (new)
+@main.route('/units/<int:unit_id>/rents', methods=['GET'])
+def unit_rents(unit_id):
+    """
+    Return aggregated rent history for a unit by collecting rents from all occupancies
+    for that unit. Response shape: list of { occupancy_id, resident_id, resident_name, start_date, end_date, monthly_rent }
+    """
+    unit = Unit.query.get(unit_id)
+    if not unit:
+        return jsonify({'error': 'Unit not found'}), 404
+
+    occs = unit.occupancies.order_by(Occupancy.move_in_date).all()
+    out = []
+    for occ in occs:
+        resident = occ.resident
+        # For each rent change on the occupancy, include effective_date and amount
+        rents = Rent.query.filter_by(occupancy_id=occ.id).order_by(Rent.effective_date).all()
+        # If there are no explicit rent records, still include an entry representing the occupancy
+        if not rents:
+            out.append({
+                'occupancy_id': occ.id,
+                'resident_id': resident.id if resident else None,
+                'resident_name': resident.full_name if resident else None,
+                'move_in_date': occ.move_in_date.isoformat() if occ.move_in_date else None,
+                'move_out_date': occ.move_out_date.isoformat() if occ.move_out_date else None,
+                'monthly_rent': None
+            })
+        else:
+            for r in rents:
+                out.append({
+                    'occupancy_id': occ.id,
+                    'resident_id': resident.id if resident else None,
+                    'resident_name': resident.full_name if resident else None,
+                    'effective_date': r.effective_date.isoformat(),
+                    'monthly_rent': r.amount
+                })
+
+    return jsonify(out), 200
