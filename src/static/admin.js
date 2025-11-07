@@ -7,9 +7,11 @@ async function loadProps(){
   const kpiProp = document.getElementById('kpi-prop');
   const kpiMoveProp = document.getElementById('kpi-move-prop');
   const kpiOccProp = document.getElementById('kpi-occ-prop');
+  const usProp = document.getElementById('us-prop');
   sel.innerHTML = '';
   rrsel.innerHTML = '';
   if(urProp) urProp.innerHTML = '';
+  if(usProp) usProp.innerHTML = '';
   if(kpiProp) kpiProp.innerHTML = '';
   if(kpiMoveProp) kpiMoveProp.innerHTML = '';
   if(kpiOccProp) kpiOccProp.innerHTML = '';
@@ -25,10 +27,25 @@ async function loadProps(){
     sel.appendChild(o);
     const o2 = o.cloneNode(true);
     rrsel.appendChild(o2);
-  if(urProp) urProp.appendChild(o.cloneNode(true));
-  if(kpiProp) kpiProp.appendChild(o.cloneNode(true));
-  if(kpiMoveProp) kpiMoveProp.appendChild(o.cloneNode(true));
-  if(kpiOccProp) kpiOccProp.appendChild(o.cloneNode(true));
+    if(urProp) urProp.appendChild(o.cloneNode(true));
+    if(usProp) usProp.appendChild(o.cloneNode(true));
+    if(kpiProp) kpiProp.appendChild(o.cloneNode(true));
+    if(kpiMoveProp) kpiMoveProp.appendChild(o.cloneNode(true));
+    if(kpiOccProp) kpiOccProp.appendChild(o.cloneNode(true));
+  });
+
+  // If only one property, auto-select it and trigger change to show units
+  if (sel && sel.options.length === 2) { // 1 placeholder + 1 property
+    sel.selectedIndex = 1;
+    sel.dispatchEvent(new Event('change'));
+  }
+  // If more than one property, keep previous logic
+  if (sel && sel.options.length > 2 && sel.selectedIndex === 0) {
+    sel.selectedIndex = 1;
+    sel.dispatchEvent(new Event('change'));
+  }
+}
+
 // Fetch move-in/move-out counts for a property and date range
 async function viewKpiMoveCounts() {
   const propSel = document.getElementById('kpi-move-prop');
@@ -66,10 +83,12 @@ async function viewKpiOccupancyRate() {
     return;
   }
   const j = await res.json();
+
   pre.textContent = JSON.stringify(j, null, 2);
 }
-  });
 
+// Wrap top-level await code in an async function
+async function initializeAdminPage() {
   // populate move-in related selects
   const miUnitSel = document.getElementById('mi-unit-id');
   const miResidentSel = document.getElementById('mi-resident-id');
@@ -86,6 +105,12 @@ async function viewKpiOccupancyRate() {
   const residentsRes = await fetch('/residents');
   const residents = await residentsRes.json();
   residents.forEach(r=>{ const o = document.createElement('option'); o.value = r.id; o.textContent = `${r.id} - ${r.first_name} ${r.last_name}`; miResidentSel.appendChild(o); });
+
+  // Auto-select first property and trigger change to populate units
+  if (propSel && propSel.options.length > 1) {
+    propSel.selectedIndex = 1; // skip placeholder
+    propSel.dispatchEvent(new Event('change'));
+  }
 
   // when the property selection changes, reload units for move-in
   if(propSel) {
@@ -109,6 +134,9 @@ async function viewKpiOccupancyRate() {
   // after loading props/units/residents, also load occupancies
   await loadOccupancies();
 }
+
+// Call the initializer on page load
+window.addEventListener('DOMContentLoaded', initializeAdminPage);
 
 // Load occupancies and populate selects used for move-out, rent-change, and history
 async function loadOccupancies(){
@@ -134,7 +162,11 @@ async function addProperty(e){
   const res = await fetch('/properties', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) });
   const j = await res.json();
   document.getElementById('property-msg').textContent = res.ok ? `Created property ${j.id}` : `Error: ${j.error||'failed'}`;
-  if(res.ok){ document.getElementById('property-name').value=''; loadProps(); }
+  if(res.ok){
+    document.getElementById('property-name').value='';
+    await loadProps();
+    await initializeAdminPage();
+  }
 }
 
 async function createUnit(){
@@ -144,7 +176,11 @@ async function createUnit(){
   const res = await fetch('/units', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({property_id: parseInt(pid), unit_number: num}) });
   const j = await res.json();
   document.getElementById('unit-msg').textContent = res.ok ? `Created unit ${j.id}` : `Error: ${j.error || 'failed'}`;
-  if(res.ok){ document.getElementById('unit-number').value=''; loadProps(); }
+  if(res.ok){
+    document.getElementById('unit-number').value='';
+    await loadProps();
+    await initializeAdminPage();
+  }
 }
 
 async function createResident(){
@@ -154,7 +190,12 @@ async function createResident(){
   const res = await fetch('/residents', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({first_name:first, last_name:last}) });
   const j = await res.json();
   document.getElementById('resident-msg').textContent = res.ok ? `Created resident ${j.id}` : `Error: ${j.error || 'failed'}`;
-  if(res.ok){ document.getElementById('resident-first').value=''; document.getElementById('resident-last').value=''; loadProps(); }
+  if(res.ok){
+    document.getElementById('resident-first').value='';
+    document.getElementById('resident-last').value='';
+    await loadProps();
+    await initializeAdminPage();
+  }
 }
 
 async function moveIn(){
@@ -309,6 +350,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
       const unitsRes = await fetch(`/units?property_id=${encodeURIComponent(pid)}`);
       const units = await unitsRes.json();
       units.forEach(u=>{ const o = document.createElement('option'); o.value = u.id; o.textContent = `P${u.property_id || pid}-${u.unit_number}`; urUnit.appendChild(o); });
+    });
+  }
+  // Also wire up us-prop to update us-unit-id
+  const usProp = document.getElementById('us-prop');
+  if(usProp){
+    usProp.addEventListener('change', async ()=>{
+      const pid = usProp.value;
+      const usUnit = document.getElementById('us-unit-id');
+      if(!pid || !usUnit) return;
+      usUnit.innerHTML = '';
+      const unitsRes = await fetch(`/units?property_id=${encodeURIComponent(pid)}`);
+      const units = await unitsRes.json();
+      units.forEach(u=>{ const o = document.createElement('option'); o.value = u.id; o.textContent = `P${u.property_id || pid}-${u.unit_number}`; usUnit.appendChild(o); });
     });
   }
 });

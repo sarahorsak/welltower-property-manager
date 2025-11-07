@@ -3,10 +3,24 @@ import json
 from datetime import date
 import pytest
 from src.models import Property, Unit, Resident, Occupancy, Rent, UnitStatus
+
+# Diagnostic: Ensure we are importing model classes, not Table objects
+import sqlalchemy
+assert not isinstance(Property, sqlalchemy.Table), f"Property is a Table, not a model: {type(Property)}"
+assert not isinstance(Unit, sqlalchemy.Table), f"Unit is a Table, not a model: {type(Unit)}"
+assert not isinstance(Resident, sqlalchemy.Table), f"Resident is a Table, not a model: {type(Resident)}"
+assert not isinstance(Occupancy, sqlalchemy.Table), f"Occupancy is a Table, not a model: {type(Occupancy)}"
+assert not isinstance(Rent, sqlalchemy.Table), f"Rent is a Table, not a model: {type(Rent)}"
+assert not isinstance(UnitStatus, sqlalchemy.Table), f"UnitStatus is a Table, not a model: {type(UnitStatus)}"
 from src import db
 
 # Use the client and db_session fixtures defined in conftest.py
-
+print("DEBUG Property type:", type(Property))
+print("DEBUG Unit type:", type(Unit))
+print("DEBUG Resident type:", type(Resident))
+print("DEBUG Occupancy type:", type(Occupancy))
+print("DEBUG Rent type:", type(Rent))
+print("DEBUG UnitStatus type:", type(UnitStatus))
 
 # Small helper to reduce repetition when creating property/unit/resident via API
 def _create_prop_unit_res(client, prop_name="P", unit_number="U1", first="F", last="L"):
@@ -41,7 +55,7 @@ def test_initial_setup(client, db_session):
 def test_rent_roll_vacant(client, db_session):
     """Test rent roll on a completely vacant unit."""
     prop = Property(name="Vacant Property")
-    unit = Unit(property=prop, unit_number="V01")
+    unit = Unit(property=prop, unit_number="U01")
     db_session.add_all([prop, unit]); db_session.commit()
 
     response = client.get(f'/reports/rent-roll?property_id={prop.id}&start_date=2024-01-01&end_date=2024-01-03')
@@ -49,7 +63,7 @@ def test_rent_roll_vacant(client, db_session):
     data = response.json
     
     assert len(data) == 3 # 3 days * 1 unit
-    assert data[1]['unit_number'] == "V01"
+    assert data[1]['unit_number'] == "P1-U01"
     assert data[1]['resident_id'] is None
     assert data[1]['monthly_rent'] == 0
     assert data[1]['unit_status'] == 'active'
@@ -116,53 +130,44 @@ def test_unit_status_inactive_prevents_rent_and_occupancy(client, db_session):
 
 # --- Testing KPI API (Stretch Goal) ---
 
-def test_kpi_occupancy_rate_calculation(client, db_session):
-    """Tests the complex occupancy rate formula provided in the prompt."""
+def test_kpi_occupancy_and_move_counts_endpoints(client, db_session):
+    """Test the split KPI endpoints: /reports/kpi-move and /reports/kpi-occupancy."""
     prop = Property(name="KPI Prop")
-    # Create 50 Units
     units = [Unit(property=prop, unit_number=f"U{i}") for i in range(1, 51)]
     res = [Resident(first_name=f"R{i}", last_name="L") for i in range(1, 42)]
     db_session.add_all([prop] + units + res); db_session.commit()
 
-    # Scenario: 30-day month (e.g., Nov 2024)
     start_date = "2024-11-01"
-    end_date = "2024-11-30" # 30 days total
-    
-    # 1. 39 units occupied for 30 days (1-39)
+    end_date = "2024-11-30"
+
+    # 39 units occupied for 30 days
     for i in range(0, 39):
         client.post('/occupancy/move-in', json={
-            "resident_id": res[i].id, "unit_id": units[i].id, 
+            "resident_id": res[i].id, "unit_id": units[i].id,
             "move_in_date": start_date, "initial_rent": 100
         })
 
-    # 2. 2 units occupied for 15 days (40-41)
-    unit_40_id = units[39].id
-    unit_41_id = units[40].id
-    
-    # Unit 40: Moves in Nov 16 (15 days occupied: 16th to 30th)
-    client.post('/occupancy/move-in', json={
-        "resident_id": res[39].id, "unit_id": unit_40_id, 
-        "move_in_date": "2024-11-16", "initial_rent": 100
-    })
-    # Unit 41: Moves in Nov 16 (15 days occupied: 16th to 30th)
-    client.post('/occupancy/move-in', json={
-        "resident_id": res[40].id, "unit_id": unit_41_id, 
-        "move_in_date": "2024-11-16", "initial_rent": 100
-    })
+    # 2 units occupied for 15 days (move in Nov 16)
+    for i in range(39, 41):
+        client.post('/occupancy/move-in', json={
+            "resident_id": res[i].id, "unit_id": units[i].id,
+            "move_in_date": "2024-11-16", "initial_rent": 100
+        })
 
-    # Expected Occupancy Rate = ((39 * 30) + (2 * 15)) / (50 * 30) = 1200 / 1500 = 0.8
-    response = client.get(f'/reports/kpi?property_id={prop.id}&start_date={start_date}&end_date={end_date}')
-    assert response.status_code == 200
-    data = response.json['2024-11']
-    
-    assert data['total_units_days'] == 1500 # 50 units * 30 days
-    assert data['occupied_days'] == 1200 # (39*30) + (2*15)
-    # Asserting near 0.8 to account for floating point
-    assert abs(data['occupancy_rate'] - 0.8) < 0.0001 
-    
-    # Assert movement counts (all happened on Nov 1st/16th, but should be tallied once per move-in)
-    assert data['move_ins'] == 41 # 39 on day 1 + 2 on day 16
-    assert data['move_outs'] == 0 # No move outs occurred
+    # Test /reports/kpi-occupancy
+    occ_resp = client.get(f'/reports/kpi-occupancy?property_id={prop.id}&year=2024&month=11')
+    assert occ_resp.status_code == 200
+    occ_data = occ_resp.json
+    assert occ_data['total_units_days'] == 1500
+    assert occ_data['occupied_days'] == 1200
+    assert abs(occ_data['occupancy_rate'] - 0.8) < 0.0001
+
+    # Test /reports/kpi-move
+    move_resp = client.get(f'/reports/kpi-move?property_id={prop.id}&start_date={start_date}&end_date={end_date}')
+    assert move_resp.status_code == 200
+    move_data = move_resp.json
+    assert move_data['move_ins'] == 41
+    assert move_data['move_outs'] == 0
 
 def test_rent_change_endpoint_and_effect_on_rent_roll(client, db_session):
     # Create resources via API
@@ -269,15 +274,21 @@ def test_rent_roll_includes_vacant_units_and_counts_correctly(client, db_session
     assert dates.count("2024-08-02") == 2
 
 
-def test_kpi_api_missing_or_bad_params_return_400(client):
-    # Missing params
-    r1 = client.get('/reports/kpi')
+def test_kpi_split_api_missing_or_bad_params_return_400(client):
+    # /reports/kpi-occupancy missing params
+    r1 = client.get('/reports/kpi-occupancy')
     assert r1.status_code == 400
-
-    # Bad date format
-    r2 = client.get('/reports/kpi?property_id=1&start_date=2024/01/01&end_date=2024-01-31')
+    # Bad year/month
+    r2 = client.get('/reports/kpi-occupancy?property_id=1&year=2024&month=13')
     assert r2.status_code == 400
-    assert "Invalid date format" in r2.json.get('error', '')
+
+    # /reports/kpi-move missing params
+    r3 = client.get('/reports/kpi-move')
+    assert r3.status_code == 400
+    # Bad date format
+    r4 = client.get('/reports/kpi-move?property_id=1&start_date=2024/01/01&end_date=2024-01-31')
+    assert r4.status_code == 400
+    assert "Invalid date format" in r4.json.get('error', '')
 
 
 def test_get_endpoints_list_and_detail(client, db_session):

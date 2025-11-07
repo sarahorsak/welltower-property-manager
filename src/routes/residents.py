@@ -29,7 +29,7 @@ def list_residents():
 
 @residents_bp.route('/residents/<int:id>', methods=['GET'])
 def get_resident(id):
-    res = Resident.query.get(id)
+    res = db.session.get(Resident, id)
     if not res:
         return jsonify({'error': 'Resident not found'}), 404
     data = res.to_dict()
@@ -39,4 +39,18 @@ def get_resident(id):
             data['current_occupancy'] = occ.to_dict()
     except Exception:
         pass
+    @residents_bp.route('/residents/move-out', methods=['POST'])
+    def move_out():
+        # Validate move-in and move-out dates
+        move_in_date = request.json.get('move_in_date')
+        move_out_date = request.json.get('move_out_date')
+        if move_in_date and move_out_date:
+            from datetime import datetime
+            try:
+                in_dt = datetime.strptime(move_in_date, '%Y-%m-%d')
+                out_dt = datetime.strptime(move_out_date, '%Y-%m-%d')
+                if in_dt >= out_dt:
+                    return jsonify({'error': 'Move-out date must be after move-in date'}), 400
+            except Exception:
+                return jsonify({'error': 'Invalid date format'}), 400
     return jsonify(data), 200

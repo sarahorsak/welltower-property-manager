@@ -22,14 +22,14 @@ def get_properties():
 
 @properties_bp.route('/properties/<int:id>', methods=['GET'])
 def get_property(id):
-    prop = Property.query.get(id)
+    prop = db.session.get(Property, id)
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
     return jsonify(prop.to_dict()), 200
 
 @properties_bp.route('/properties/<int:id>/units', methods=['GET'])
 def get_property_units(id):
-    prop = Property.query.get(id)
+    prop = db.session.get(Property, id)
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
 

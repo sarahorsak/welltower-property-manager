@@ -35,4 +35,8 @@ def create_app(config_class=Config, config_name=None):
         # Only create tables if the database doesn't exist
         db.create_all()
 
+    @app.route('/')
+    def index():
+        return "Welltower Property Manager API"
+
     return app

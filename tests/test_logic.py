@@ -2,7 +2,8 @@
 import pytest
 from datetime import date
 from src.models import Property, Unit, Resident, Occupancy, Rent, UnitStatus
-from src.logic import generate_rent_roll, calculate_kpis
+from src.services.rent_roll import generate_rent_roll
+from src.services.kpis import move_in_out_counts, occupancy_rate_for_month
 
 # The 'db_session' fixture ensures a clean database state for every test.
 
@@ -152,50 +153,38 @@ def test_logic_rent_roll_unit_status(db_session):
     assert report[1]['unit_status'] == 'inactive'
     assert report[1]['resident_id'] is None # Data is suppressed for reporting
 
-def test_logic_kpi_calculation(db_session):
-    """Test the calculation of move-ins/outs and occupancy rate."""
+def test_kpi_split_functions(db_session):
+    """Test the split KPI service functions: move_in_out_counts and occupancy_rate_for_month."""
     prop, unit1, res1 = setup_property_unit_resident(db_session, unit_num="U1", res_name="R1")
     unit2 = Unit(property=prop, unit_number="U2")
     res2 = Resident(first_name="R2", last_name="Test")
     db_session.add_all([unit2, res2])
     db_session.commit()
-    
+
     # Unit 1: Occupied before the KPI month so only the move-out happens in June
     occ1 = Occupancy(resident=res1, unit=unit1, move_in_date=date(2024, 5, 1))
     rent1 = Rent(occupancy=occ1, amount=100, effective_date=date(2024, 6, 1))
-    
+
     # Unit 2: Moves in June 16 (15 days occupied: 16th to 30th)
     occ2 = Occupancy(resident=res2, unit=unit2, move_in_date=date(2024, 6, 16))
     rent2 = Rent(occupancy=occ2, amount=100, effective_date=date(2024, 6, 16))
-    
+
     # Unit 1: Moves out June 15
     occ1.move_out_date = date(2024, 6, 15)
-    
+
     db_session.add_all([occ1, rent1, occ2, rent2])
     db_session.commit()
 
-    # Run KPI logic (June 1 - June 30 is 30 days)
-    kpis = calculate_kpis(prop.id, date(2024, 6, 1), date(2024, 6, 30))
-    
-    june_kpis = kpis['2024-06']
-    
-    # Total Days = 2 Units * 30 Days = 60
-    assert june_kpis['total_units_days'] == 60
-    
-    # Occupied Days:
-    # Unit 1: Occupied for 14 days (June 1 to 14) -> 14 days
-    # Unit 2: Occupied for 15 days (June 16 to 30) -> 15 days
-    # Total Occupied Days = 14 + 15 = 29
-    assert june_kpis['occupied_days'] == 29
-    
-    # Occupancy Rate = 29 / 60 ≈ 0.4833
-    assert abs(june_kpis['occupancy_rate'] - 0.4833) < 0.0001
+    # Test occupancy_rate_for_month (June 2024)
+    occ = occupancy_rate_for_month(prop.id, 2024, 6)
+    assert occ['total_units_days'] == 60
+    assert occ['occupied_days'] == 29
+    assert abs(occ['occupancy_rate'] - 0.4833) < 0.0001
 
-    # Movements:
-    # Unit 1: Move out on June 15 (Transition from occupied to vacant on June 15) -> 1 Move Out
-    # Unit 2: Move in on June 16 (Transition from vacant to occupied on June 16) -> 1 Move In
-    assert june_kpis['move_ins'] == 1
-    assert june_kpis['move_outs'] == 1
+    # Test move_in_out_counts (June 1 - June 30)
+    moves = move_in_out_counts(prop.id, date(2024, 6, 1), date(2024, 6, 30))
+    assert moves['move_ins'] == 1
+    assert moves['move_outs'] == 1
 
 
 # ...existing code...
@@ -291,15 +280,57 @@ def test_kpis_count_moves_on_boundaries(db_session):
     db_session.add_all([occ_in, rent_in, occ_out, rent_out])
     db_session.commit()
 
-    kpis = calculate_kpis(prop.id, date(2024, 4, 1), date(2024, 4, 30))
-    april = kpis['2024-04']
+    moves = move_in_out_counts(prop.id, date(2024, 4, 1), date(2024, 4, 30))
+    occ = occupancy_rate_for_month(prop.id, 2024, 4)
 
     # Expect one move-in (on Apr 1) and one move-out (on Apr 30)
-    assert april['move_ins'] == 1
-    assert april['move_outs'] == 1
+    assert moves['move_ins'] == 1
+    assert moves['move_outs'] == 1
+    # Optionally check occupancy rate keys exist
+    assert 'occupancy_rate' in occ
 
 
 def test_rent_history_returns_latest_effective_amount(db_session):
+    """
+    Verify that get_rent_on_date returns the rent with the latest effective_date <= query date.
+    """
+    prop, unit, res = setup_property_unit_resident(db_session, prop_name="RentHistory", unit_num="RH1", res_name="RHR")
+    occ = Occupancy(resident=res, unit=unit, move_in_date=date(2024, 5, 1))
+    rent_a = Rent(occupancy=occ, amount=1000, effective_date=date(2024, 5, 1))
+    rent_b = Rent(occupancy=occ, amount=1200, effective_date=date(2024, 5, 15))
+    rent_c = Rent(occupancy=occ, amount=1500, effective_date=date(2024, 6, 1))
+    db_session.add_all([occ, rent_a, rent_b, rent_c])
+    db_session.commit()
+
+    # May 14 -> should pick 1000
+    report_may14 = generate_rent_roll(prop.id, date(2024, 5, 14), date(2024, 5, 14))[0]
+    assert report_may14['monthly_rent'] == 1000
+
+    # May 15 -> should pick 1200 (effective that day)
+    report_may15 = generate_rent_roll(prop.id, date(2024, 5, 15), date(2024, 5, 15))[0]
+    assert report_may15['monthly_rent'] == 1200
+
+    # Jun 1 -> should pick 1500
+    report_jun1 = generate_rent_roll(prop.id, date(2024, 6, 1), date(2024, 6, 1))[0]
+    assert report_jun1['monthly_rent'] == 1500
+def test_rent_roll_multiple_rents_same_day(db_session):
+    """
+    If a resident moves in and a rent change occurs on the same day, both rents should appear in the rent roll for that day.
+    """
+    prop, unit, res = setup_property_unit_resident(db_session, prop_name="MultiRent", unit_num="MR1", res_name="MRR")
+    occ = Occupancy(resident=res, unit=unit, move_in_date=date(2024, 7, 1))
+    rent_a = Rent(occupancy=occ, amount=1000, effective_date=date(2024, 7, 1))
+    rent_b = Rent(occupancy=occ, amount=1200, effective_date=date(2024, 7, 1))
+    db_session.add_all([occ, rent_a, rent_b])
+    db_session.commit()
+
+    report = generate_rent_roll(prop.id, date(2024, 7, 1), date(2024, 7, 1))
+    # Should contain at least two records for the same day, one for each rent
+    rents_on_day = [rec['monthly_rent'] for rec in report if rec['date'] == '2024-07-01' and rec['resident_id'] == res.id]
+    assert 1000 in rents_on_day
+    assert 1200 in rents_on_day
+    # Should have at least two records for that day
+    assert len(rents_on_day) >= 2
     """
     Verify that get_rent_on_date returns the rent with the latest effective_date <= query date.
     """

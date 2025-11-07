@@ -1,10 +1,10 @@
 # src/services/kpis.py
 from ..models import Property, Unit, Occupancy
+from .. import db
 from .rent_roll import generate_rent_roll
 from datetime import date
 from collections import defaultdict
 import calendar
-
 
 
 def move_in_out_counts(property_id, start_date, end_date):
@@ -20,7 +20,7 @@ def occupancy_rate_for_month(property_id, year, month):
     """
     Returns the occupancy rate for a property for a given calendar month (YYYY, MM).
     """
-    prop = Property.query.get(property_id)
+    prop = db.session.get(Property, property_id)
     if not prop:
         return {'occupancy_rate': 0.0, 'total_units_days': 0, 'occupied_days': 0}
     total_units = prop.units.count()

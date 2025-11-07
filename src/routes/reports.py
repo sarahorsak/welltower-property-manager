@@ -73,5 +73,9 @@ def get_kpi_occupancy():
         month = int(month)
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid year/month/property_id'}), 400
+    if not (1 <= month <= 12):
+        return jsonify({'error': 'Month must be between 1 and 12'}), 400
+    if year < 1:
+        return jsonify({'error': 'Year must be a positive integer'}), 400
     result = occupancy_rate_for_month(prop_id, year, month)
     return jsonify(result), 200

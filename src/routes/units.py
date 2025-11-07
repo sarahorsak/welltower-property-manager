@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from ..models import Unit, UnitStatus, Occupancy, Resident, Rent
+from ..models import Property, Unit, UnitStatus, Occupancy, Resident, Rent
 from .. import db
 from datetime import date
 
@@ -10,7 +10,7 @@ def create_unit():
     data = request.json
     if not data or not data.get('property_id') or not data.get('unit_number'):
         return jsonify({'error': 'property_id and unit_number are required'}), 400
-    prop = db.session.get(db.Model.metadata.tables['property'], data['property_id'])
+    prop = db.session.get(Property, data['property_id'])
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
     unit = Unit(property_id=data['property_id'], unit_number=data['unit_number'])
@@ -33,7 +33,7 @@ def list_units():
 
 @units_bp.route('/units/<int:id>', methods=['GET'])
 def get_unit(id):
-    unit = Unit.query.get(id)
+    unit = db.session.get(Unit, id)
     if not unit:
         return jsonify({'error': 'Unit not found'}), 404
     data = unit.to_dict()
@@ -49,7 +49,7 @@ def set_unit_status(id):
     required_fields = ['status', 'start_date']
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing status or start_date'}), 400
-    unit = Unit.query.get(id)
+    unit = db.session.get(Unit, id)
     if not unit:
         return jsonify({'error': 'Unit not found'}), 404
     try:
@@ -60,6 +60,15 @@ def set_unit_status(id):
         return jsonify({'error': 'Status must be "active" or "inactive"'}), 400
     if UnitStatus.query.filter_by(unit_id=id, start_date=start_dt).first():
         return jsonify({'error': f'A status change already exists for unit {id} on {start_dt}'}), 400
+    # Prevent setting to inactive if occupied on start_dt
+    if data['status'] == 'inactive':
+        occ = Occupancy.query.filter(
+            Occupancy.unit_id == id,
+            Occupancy.move_in_date <= start_dt,
+            (Occupancy.move_out_date == None) | (Occupancy.move_out_date > start_dt)
+        ).first()
+        if occ:
+            return jsonify({'error': 'Cannot set unit to inactive while it is occupied.'}), 400
     status_rec = UnitStatus(
         unit_id=id,
         status=data['status'],
@@ -90,7 +99,7 @@ def get_unit_status(id):
 
 @units_bp.route('/units/<int:unit_id>/rents', methods=['GET'])
 def unit_rents(unit_id):
-    unit = Unit.query.get(unit_id)
+    unit = db.session.get(Unit, unit_id)
     if not unit:
         return jsonify({'error': 'Unit not found'}), 404
     occs = unit.occupancies.order_by(Occupancy.move_in_date).all()

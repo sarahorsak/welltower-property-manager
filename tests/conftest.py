@@ -1,7 +1,7 @@
 import pytest
 from src import create_app, db
 from src.config import TestingConfig
-from src.models import *  # register models so metadata is available
+from src.models import Property, Unit, Resident, Occupancy, Rent, UnitStatus  # register models so metadata is available
 from sqlalchemy.orm import sessionmaker, scoped_session
 
 @pytest.fixture(scope='module')
