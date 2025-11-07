@@ -32,11 +32,19 @@ def generate_rent_roll(property_id, start_date, end_date):
             ).first()
 
             # 3. Compile Snapshot
+            composed_unit_number = f"P{prop.id}-{unit.unit_number}"
             if unit_status == 'inactive':
-                record = {
-                    "resident_id": None, "resident_name": None, "monthly_rent": 0,
+                # Always output a record for inactive units
+                rent_roll_report.append({
+                    "date": current_date.isoformat(),
+                    "property_id": prop.id,
+                    "unit_id": unit.id,
+                    "unit_number": composed_unit_number,
+                    "resident_id": None,
+                    "resident_name": None,
+                    "monthly_rent": 0,
                     "unit_status": "inactive"
-                }
+                })
             elif current_occupancy:
                 # Unit is ACTIVE and OCCUPIED
                 resident = current_occupancy.resident
@@ -44,22 +52,15 @@ def generate_rent_roll(property_id, start_date, end_date):
                 same_day_rents = [r for r in current_occupancy.rent_history if r.effective_date == current_date]
                 # Always emit the standard daily record (latest rent as of this day)
                 rent_amount = current_occupancy.get_rent_on_date(current_date)
-                record = {
-                    "resident_id": resident.id,
-                    "resident_name": resident.full_name,
-                    "monthly_rent": rent_amount,
-                    "unit_status": "active"
-                }
-                composed_unit_number = f"P{prop.id}-{unit.unit_number}"
                 rent_roll_report.append({
                     "date": current_date.isoformat(),
                     "property_id": prop.id,
                     "unit_id": unit.id,
                     "unit_number": composed_unit_number,
-                    "resident_id": record.get('resident_id'),
-                    "resident_name": record.get('resident_name'),
-                    "monthly_rent": record.get('monthly_rent'),
-                    "unit_status": record.get('unit_status')
+                    "resident_id": resident.id,
+                    "resident_name": resident.full_name,
+                    "monthly_rent": rent_amount,
+                    "unit_status": "active"
                 })
                 # Emit a separate record for each rent change effective today (if any)
                 for rent in same_day_rents:
@@ -75,20 +76,15 @@ def generate_rent_roll(property_id, start_date, end_date):
                     })
             else:
                 # Unit is ACTIVE and VACANT
-                record = {
-                    "resident_id": None, "resident_name": None, "monthly_rent": 0,
-                    "unit_status": "active"
-                }
-                composed_unit_number = f"P{prop.id}-{unit.unit_number}"
                 rent_roll_report.append({
                     "date": current_date.isoformat(),
                     "property_id": prop.id,
                     "unit_id": unit.id,
                     "unit_number": composed_unit_number,
-                    "resident_id": record.get('resident_id'),
-                    "resident_name": record.get('resident_name'),
-                    "monthly_rent": record.get('monthly_rent'),
-                    "unit_status": record.get('unit_status')
+                    "resident_id": None,
+                    "resident_name": None,
+                    "monthly_rent": 0,
+                    "unit_status": "active"
                 })
 
         current_date += timedelta(days=1)

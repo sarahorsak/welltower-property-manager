@@ -60,7 +60,7 @@ def set_unit_status(id):
         return jsonify({'error': 'Status must be "active" or "inactive"'}), 400
     if UnitStatus.query.filter_by(unit_id=id, start_date=start_dt).first():
         return jsonify({'error': f'A status change already exists for unit {id} on {start_dt}'}), 400
-    # Prevent setting to inactive if occupied on start_dt
+    # Prevent setting to inactive if occupied on start_dt or if there is a future scheduled occupancy
     if data['status'] == 'inactive':
         occ = Occupancy.query.filter(
             Occupancy.unit_id == id,
@@ -69,6 +69,12 @@ def set_unit_status(id):
         ).first()
         if occ:
             return jsonify({'error': 'Cannot set unit to inactive while it is occupied.'}), 400
+        future_occ = Occupancy.query.filter(
+            Occupancy.unit_id == id,
+            Occupancy.move_in_date >= start_dt
+        ).first()
+        if future_occ:
+            return jsonify({'error': 'Cannot set unit to inactive before a scheduled occupancy.'}), 400
     status_rec = UnitStatus(
         unit_id=id,
         status=data['status'],
