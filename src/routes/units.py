@@ -43,6 +43,24 @@ def get_unit(id):
         pass
     return jsonify(data), 200
 
+
+# PATCH endpoint to amend unit details (unit_number, property_id)
+@units_bp.route('/units/<int:id>', methods=['PATCH'])
+def update_unit(id):
+    data = request.json
+    unit = db.session.get(Unit, id)
+    if not unit:
+        return jsonify({'error': 'Unit not found'}), 404
+    if 'unit_number' in data:
+        unit.unit_number = data['unit_number']
+    if 'property_id' in data:
+        prop = db.session.get(Property, data['property_id'])
+        if not prop:
+            return jsonify({'error': 'Property not found'}), 404
+        unit.property_id = data['property_id']
+    db.session.commit()
+    return jsonify({'message': 'Unit updated'}), 200
+
 @units_bp.route('/units/<int:id>/status', methods=['POST'])
 def set_unit_status(id):
     data = request.json

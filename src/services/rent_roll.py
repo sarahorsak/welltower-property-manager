@@ -19,22 +19,10 @@ def generate_rent_roll(property_id, start_date, end_date):
 
     current_date = start_date
     while current_date <= end_date:
-
         for unit in all_units:
-
-            # 1. Get Unit Status
             unit_status = unit.get_status_on_date(current_date)
-
-            # 2. Find Occupancy
-            current_occupancy = unit.occupancies.filter(
-                Occupancy.move_in_date <= current_date,
-                (Occupancy.move_out_date == None) | (Occupancy.move_out_date > current_date)
-            ).first()
-
-            # 3. Compile Snapshot
             composed_unit_number = f"P{prop.id}-{unit.unit_number}"
             if unit_status == 'inactive':
-                # Always output a record for inactive units
                 rent_roll_report.append({
                     "date": current_date.isoformat(),
                     "property_id": prop.id,
@@ -45,13 +33,16 @@ def generate_rent_roll(property_id, start_date, end_date):
                     "monthly_rent": 0,
                     "unit_status": "inactive"
                 })
-            elif current_occupancy:
-                # Unit is ACTIVE and OCCUPIED
-                resident = current_occupancy.resident
-                # Find all rent records effective on this day
-                same_day_rents = [r for r in current_occupancy.rent_history if r.effective_date == current_date]
-                # Always emit the standard daily record (latest rent as of this day)
-                rent_amount = current_occupancy.get_rent_on_date(current_date)
+                continue
+            # Find occupancy where move_in_date <= current_date < move_out_date (or move_out_date is None)
+            occ = unit.occupancies.filter(
+                Occupancy.move_in_date <= current_date,
+                (Occupancy.move_out_date == None) | (Occupancy.move_out_date > current_date)
+            ).first()
+            if occ:
+                resident = occ.resident
+                # Only emit one record per day per occupancy: latest rent as of that day
+                rent_amount = occ.get_rent_on_date(current_date)
                 rent_roll_report.append({
                     "date": current_date.isoformat(),
                     "property_id": prop.id,
@@ -62,20 +53,7 @@ def generate_rent_roll(property_id, start_date, end_date):
                     "monthly_rent": rent_amount,
                     "unit_status": "active"
                 })
-                # Emit a separate record for each rent change effective today (if any)
-                for rent in same_day_rents:
-                    rent_roll_report.append({
-                        "date": current_date.isoformat(),
-                        "property_id": prop.id,
-                        "unit_id": unit.id,
-                        "unit_number": composed_unit_number,
-                        "resident_id": resident.id,
-                        "resident_name": resident.full_name,
-                        "monthly_rent": rent.amount,
-                        "unit_status": "active"
-                    })
             else:
-                # Unit is ACTIVE and VACANT
                 rent_roll_report.append({
                     "date": current_date.isoformat(),
                     "property_id": prop.id,
@@ -86,7 +64,5 @@ def generate_rent_roll(property_id, start_date, end_date):
                     "monthly_rent": 0,
                     "unit_status": "active"
                 })
-
         current_date += timedelta(days=1)
-
     return rent_roll_report

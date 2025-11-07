@@ -28,7 +28,12 @@ def occupancy_rate_for_month(property_id, year, month):
     month_start = date(year, month, 1)
     month_end = date(year, month, days_in_month)
     rent_roll_month = generate_rent_roll(property_id, month_start, month_end)
-    occupied_days = sum(1 for r in rent_roll_month if r.get('resident_id') is not None)
+    # Count unique (unit_id, date) pairs with a resident
+    seen = set()
+    for r in rent_roll_month:
+        if r.get('resident_id') is not None:
+            seen.add((r['unit_id'], r['date']))
+    occupied_days = len(seen)
     total_unit_days = total_units * days_in_month if total_units > 0 else 0
     occupancy_rate = round(occupied_days / total_unit_days, 4) if total_unit_days > 0 else 0.0
     return {

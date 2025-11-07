@@ -39,18 +39,19 @@ def get_resident(id):
             data['current_occupancy'] = occ.to_dict()
     except Exception:
         pass
-    @residents_bp.route('/residents/move-out', methods=['POST'])
-    def move_out():
-        # Validate move-in and move-out dates
-        move_in_date = request.json.get('move_in_date')
-        move_out_date = request.json.get('move_out_date')
-        if move_in_date and move_out_date:
-            from datetime import datetime
-            try:
-                in_dt = datetime.strptime(move_in_date, '%Y-%m-%d')
-                out_dt = datetime.strptime(move_out_date, '%Y-%m-%d')
-                if in_dt >= out_dt:
-                    return jsonify({'error': 'Move-out date must be after move-in date'}), 400
-            except Exception:
-                return jsonify({'error': 'Invalid date format'}), 400
     return jsonify(data), 200
+
+
+# PATCH endpoint to amend resident details
+@residents_bp.route('/residents/<int:id>', methods=['PATCH'])
+def update_resident(id):
+    data = request.json
+    res = db.session.get(Resident, id)
+    if not res:
+        return jsonify({'error': 'Resident not found'}), 404
+    if 'first_name' in data:
+        res.first_name = data['first_name']
+    if 'last_name' in data:
+        res.last_name = data['last_name']
+    db.session.commit()
+    return jsonify({'message': 'Resident updated'}), 200

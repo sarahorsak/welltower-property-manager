@@ -50,6 +50,58 @@ def test_initial_setup(client, db_session):
     assert db_session.get(Unit, unit_id) is not None
     assert db_session.get(Resident, resident_id) is not None
 
+
+def test_patch_update_occupancy(client, db_session):
+    """Test amending occupancy move-in/move-out dates and unit assignment."""
+    # Setup: create property, two units, resident, occupancy
+    p = client.post('/properties', json={"name": "PatchProp"}).json
+    u1 = client.post('/units', json={"property_id": p['id'], "unit_number": "U1"}).json
+    u2 = client.post('/units', json={"property_id": p['id'], "unit_number": "U2"}).json
+    r = client.post('/residents', json={"first_name": "Patch", "last_name": "Test"}).json
+    occ = client.post('/occupancy/move-in', json={
+        "resident_id": r['id'], "unit_id": u1['id'], "move_in_date": "2024-01-01", "initial_rent": 1000
+    }).json
+    occ_id = occ['occupancy_id']
+    # Patch move-in date
+    resp = client.patch(f'/occupancy/{occ_id}', json={"move_in_date": "2024-01-02"})
+    assert resp.status_code == 200
+    # Patch move-out date
+    resp = client.patch(f'/occupancy/{occ_id}', json={"move_out_date": "2024-01-10"})
+    assert resp.status_code == 200
+    # Patch unit assignment to u2
+    resp = client.patch(f'/occupancy/{occ_id}', json={"unit_id": u2['id']})
+    assert resp.status_code == 200
+    # Invalid: move-in after move-out
+    resp = client.patch(f'/occupancy/{occ_id}', json={"move_in_date": "2024-02-01", "move_out_date": "2024-01-10"})
+    assert resp.status_code == 400
+
+def test_patch_update_resident(client, db_session):
+    """Test amending resident details."""
+    r = client.post('/residents', json={"first_name": "Old", "last_name": "Name"}).json
+    rid = r['id']
+    resp = client.patch(f'/residents/{rid}', json={"first_name": "New", "last_name": "Person"})
+    assert resp.status_code == 200
+    get_resp = client.get(f'/residents/{rid}')
+    assert get_resp.json['first_name'] == "New"
+    assert get_resp.json['last_name'] == "Person"
+
+def test_patch_update_unit(client, db_session):
+    """Test amending unit details."""
+    p = client.post('/properties', json={"name": "PatchUnitProp"}).json
+    u = client.post('/units', json={"property_id": p['id'], "unit_number": "U1"}).json
+    uid = u['id']
+    # Change unit_number
+    resp = client.patch(f'/units/{uid}', json={"unit_number": "U1A"})
+    assert resp.status_code == 200
+    get_resp = client.get(f'/units/{uid}')
+    assert get_resp.json['unit_number'] == "U1A"
+    # Change property_id
+    p2 = client.post('/properties', json={"name": "PatchUnitProp2"}).json
+    resp = client.patch(f'/units/{uid}', json={"property_id": p2['id']})
+    assert resp.status_code == 200
+    get_resp = client.get(f'/units/{uid}')
+    assert get_resp.json['property_id'] == p2['id']
+
 # --- Testing Core Rent Roll Logic (Time-Varying Data) ---
 
 def test_rent_roll_vacant(client, db_session):

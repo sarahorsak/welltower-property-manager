@@ -1,7 +1,8 @@
+
 from flask import Blueprint, request, jsonify
 from ..models import Occupancy, Unit, Resident, Rent
 from .. import db
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from datetime import date
 
 occupancy_bp = Blueprint('occupancy', __name__)
@@ -115,3 +116,64 @@ def list_occupancies():
             'move_out_date': o.move_out_date.isoformat() if o.move_out_date else None,
         })
     return jsonify(out), 200
+
+
+# PATCH endpoint to amend occupancy (move-in/move-out dates, unit assignment)
+@occupancy_bp.route('/occupancy/<int:id>', methods=['PATCH'])
+def update_occupancy(id):
+    data = request.json
+    occ = db.session.get(Occupancy, id)
+    if not occ:
+        return jsonify({'error': 'Occupancy not found'}), 404
+    move_in_date = data.get('move_in_date')
+    move_out_date = data.get('move_out_date')
+    unit_id = data.get('unit_id')
+    # Validate move-in/move-out dates
+    if move_in_date:
+        try:
+            move_in_dt = date.fromisoformat(move_in_date)
+        except Exception:
+            return jsonify({'error': 'Invalid move_in_date format'}), 400
+    else:
+        move_in_dt = occ.move_in_date
+    if move_out_date:
+        try:
+            move_out_dt = date.fromisoformat(move_out_date)
+        except Exception:
+            return jsonify({'error': 'Invalid move_out_date format'}), 400
+    else:
+        move_out_dt = occ.move_out_date
+    if move_in_dt and move_out_dt and move_in_dt >= move_out_dt:
+        return jsonify({'error': 'Move-in date must be before move-out date'}), 400
+    # Validate unit assignment
+    if unit_id:
+        unit = db.session.get(Unit, unit_id)
+        if not unit:
+            return jsonify({'error': 'Unit not found'}), 404
+        # Check unit is active for new move-in date
+        if unit.get_status_on_date(move_in_dt) == 'inactive':
+            return jsonify({'error': f'Unit {unit.unit_number} is inactive on {move_in_dt.isoformat()}'}), 400
+        # Check for overlapping occupancies
+        overlap = Occupancy.query.filter(
+            Occupancy.unit_id == unit_id,
+            Occupancy.id != id,
+            Occupancy.move_in_date < (move_out_dt or date.max),
+            or_(Occupancy.move_out_date == None, Occupancy.move_out_date > move_in_dt)
+        ).first()
+        if overlap:
+            return jsonify({'error': 'Unit is already occupied during the specified period'}), 400
+        occ.unit_id = unit_id
+    # If only changing dates, check for overlap in current unit
+    else:
+        overlap = Occupancy.query.filter(
+            Occupancy.unit_id == occ.unit_id,
+            Occupancy.id != id,
+            Occupancy.move_in_date < (move_out_dt or date.max),
+            or_(Occupancy.move_out_date == None, Occupancy.move_out_date > move_in_dt)
+        ).first()
+        if overlap:
+            return jsonify({'error': 'Unit is already occupied during the specified period'}), 400
+    occ.move_in_date = move_in_dt
+    occ.move_out_date = move_out_dt
+    db.session.commit()
+    return jsonify({'message': 'Occupancy updated'}), 200
