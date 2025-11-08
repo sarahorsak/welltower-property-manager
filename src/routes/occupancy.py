@@ -13,9 +13,15 @@ def move_in():
     required_fields = ['resident_id', 'unit_id', 'move_in_date', 'initial_rent']
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Missing fields'}), 400
+    # Resident cannot have overlapping occupancies
+    occs = Occupancy.query.filter_by(resident_id=data['resident_id']).all()
     move_in_dt = date.fromisoformat(data['move_in_date'])
-    # Only validate if both move_in_date and move_out_date are present
     move_out_date = data.get('move_out_date')
+    for occ in occs:
+        occ_end = occ.move_out_date or date.max
+        if (occ.move_in_date <= move_in_dt < occ_end) or (move_out_date and occ.move_in_date < date.fromisoformat(move_out_date) <= occ_end):
+            return jsonify({'error': 'Resident has overlapping occupancy'}), 400
+    # Only validate if both move_in_date and move_out_date are present
     if move_out_date:
         move_out_dt = date.fromisoformat(move_out_date)
         if move_in_dt >= move_out_dt:
@@ -25,6 +31,7 @@ def move_in():
         return jsonify({'error': 'Unit not found'}), 404
     if unit.get_status_on_date(move_in_dt) == 'inactive':
         return jsonify({'error': f'Unit {unit.unit_number} is inactive on {move_in_dt.isoformat()}'}), 400
+    # No overlapping occupancies for the same unit
     existing_occupancy = Occupancy.query.filter(
         Occupancy.unit_id == data['unit_id'],
         Occupancy.move_in_date <= move_in_dt,
@@ -38,14 +45,21 @@ def move_in():
         move_in_date=move_in_dt
     )
     db.session.add(occ)
+    # Rent must be positive integer
+    try:
+        rent_amt = int(data['initial_rent'])
+    except Exception:
+        return jsonify({'error': 'initial_rent must be an integer'}), 400
+    if rent_amt <= 0:
+        return jsonify({'error': 'initial_rent must be positive'}), 400
     rent = Rent(
         occupancy=occ,
-        amount=data['initial_rent'],
+        amount=rent_amt,
         effective_date=move_in_dt
     )
     db.session.add(rent)
     db.session.commit()
-    return jsonify({'message': 'Move-in successful', 'occupancy_id': occ.id}), 201
+    return jsonify(occ.to_dict()), 201
 
 @occupancy_bp.route('/occupancy/<int:id>/move-out', methods=['PUT'])
 def move_out(id):
@@ -82,14 +96,24 @@ def rent_change(id):
     existing = Rent.query.filter_by(occupancy_id=occ.id, effective_date=eff_date, amount=data['new_rent']).first()
     if existing:
         return jsonify({'error': 'A rent record with this amount and date already exists.'}), 400
+    # Rent must be positive integer
+    try:
+        rent_amt = int(data['new_rent'])
+    except Exception:
+        return jsonify({'error': 'new_rent must be an integer'}), 400
+    if rent_amt <= 0:
+        return jsonify({'error': 'new_rent must be positive'}), 400
+    # Effective date must be within occupancy period
+    if eff_date < occ.move_in_date or (occ.move_out_date and eff_date >= occ.move_out_date):
+        return jsonify({'error': 'effective_date must be within occupancy period'}), 400
     rent = Rent(
         occupancy_id=occ.id,
-        amount=data['new_rent'],
+        amount=rent_amt,
         effective_date=eff_date
     )
     db.session.add(rent)
     db.session.commit()
-    return jsonify({'message': 'Rent change logged', 'rent_id': rent.id}), 201
+    return jsonify(rent.to_dict()), 201
 
 @occupancy_bp.route('/occupancy/<int:id>/rents', methods=['GET'])
 def occupancy_rents(id):
@@ -176,4 +200,4 @@ def update_occupancy(id):
     occ.move_in_date = move_in_dt
     occ.move_out_date = move_out_dt
     db.session.commit()
-    return jsonify({'message': 'Occupancy updated'}), 200
+    return jsonify(occ.to_dict()), 200

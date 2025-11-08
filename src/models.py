@@ -58,6 +58,15 @@ class Resident(db.Model):
         }
 
 class Occupancy(db.Model):
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'unit_id': self.unit_id,
+            'resident_id': self.resident_id,
+            'move_in_date': self.move_in_date.isoformat() if self.move_in_date else None,
+            'move_out_date': self.move_out_date.isoformat() if self.move_out_date else None
+        }
+    
     """Links a Resident to a Unit for a period of time."""
     id = db.Column(db.Integer, primary_key=True)
     unit_id = db.Column(db.Integer, db.ForeignKey('unit.id'), nullable=False)
@@ -80,6 +89,14 @@ class Occupancy(db.Model):
         return rent_record.amount if rent_record else 0
 
 class Rent(db.Model):
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'occupancy_id': self.occupancy_id,
+            'amount': self.amount,
+            'effective_date': self.effective_date.isoformat() if self.effective_date else None
+        }
+    
     """Tracks rent changes over time for a specific occupancy."""
     id = db.Column(db.Integer, primary_key=True)
     occupancy_id = db.Column(db.Integer, db.ForeignKey('occupancy.id'), nullable=False)
@@ -89,6 +106,13 @@ class Rent(db.Model):
     occupancy = db.relationship('Occupancy', back_populates='rent_history')
 
 class UnitStatus(db.Model):
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'unit_id': self.unit_id,
+            'status': self.status,
+            'start_date': self.start_date.isoformat() if self.start_date else None
+        }
     """(Stretch Goal) Tracks unit status changes."""
     id = db.Column(db.Integer, primary_key=True)
     unit_id = db.Column(db.Integer, db.ForeignKey('unit.id'), nullable=False)

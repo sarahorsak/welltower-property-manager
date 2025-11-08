@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from ..models import Property, Unit, UnitStatus, Occupancy, Resident, Rent
+from ..config import ValidationConfig
 from .. import db
 from datetime import date
 
@@ -13,7 +14,20 @@ def create_unit():
     prop = db.session.get(Property, data['property_id'])
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
-    unit = Unit(property_id=data['property_id'], unit_number=data['unit_number'])
+    import re
+    # Validate unit_number format and range
+    unit_number = data['unit_number']
+    if not re.match(ValidationConfig.UNIT_NUMBER_REGEX, str(unit_number)):
+        return jsonify({'error': f'unit_number must match pattern {ValidationConfig.UNIT_NUMBER_REGEX}'}), 400
+    if len(str(unit_number)) > ValidationConfig.UNIT_NUMBER_MAX_LENGTH:
+        return jsonify({'error': f'unit_number max length is {ValidationConfig.UNIT_NUMBER_MAX_LENGTH}'}), 400
+    try:
+        unit_number_int = int(unit_number)
+    except Exception:
+        return jsonify({'error': 'unit_number must be an integer'}), 400
+    if not (ValidationConfig.UNIT_NUMBER_MIN <= unit_number_int <= ValidationConfig.UNIT_NUMBER_MAX):
+        return jsonify({'error': f'unit_number must be between {ValidationConfig.UNIT_NUMBER_MIN} and {ValidationConfig.UNIT_NUMBER_MAX}'}), 400
+    unit = Unit(property_id=data['property_id'], unit_number=unit_number_int)
     db.session.add(unit)
     db.session.commit()
     return jsonify(unit.to_dict()), 201
@@ -51,15 +65,27 @@ def update_unit(id):
     unit = db.session.get(Unit, id)
     if not unit:
         return jsonify({'error': 'Unit not found'}), 404
+    import re
     if 'unit_number' in data:
-        unit.unit_number = data['unit_number']
+        unit_number = data['unit_number']
+        if not re.match(ValidationConfig.UNIT_NUMBER_REGEX, str(unit_number)):
+            return jsonify({'error': f'unit_number must match pattern {ValidationConfig.UNIT_NUMBER_REGEX}'}), 400
+        if len(str(unit_number)) > ValidationConfig.UNIT_NUMBER_MAX_LENGTH:
+            return jsonify({'error': f'unit_number max length is {ValidationConfig.UNIT_NUMBER_MAX_LENGTH}'}), 400
+        try:
+            unit_number_int = int(unit_number)
+        except Exception:
+            return jsonify({'error': 'unit_number must be an integer'}), 400
+        if not (ValidationConfig.UNIT_NUMBER_MIN <= unit_number_int <= ValidationConfig.UNIT_NUMBER_MAX):
+            return jsonify({'error': f'unit_number must be between {ValidationConfig.UNIT_NUMBER_MIN} and {ValidationConfig.UNIT_NUMBER_MAX}'}), 400
+        unit.unit_number = unit_number_int
     if 'property_id' in data:
         prop = db.session.get(Property, data['property_id'])
         if not prop:
             return jsonify({'error': 'Property not found'}), 404
         unit.property_id = data['property_id']
     db.session.commit()
-    return jsonify({'message': 'Unit updated'}), 200
+    return jsonify(unit.to_dict()), 200
 
 @units_bp.route('/units/<int:id>/status', methods=['POST'])
 def set_unit_status(id):
