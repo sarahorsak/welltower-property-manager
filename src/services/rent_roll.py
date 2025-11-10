@@ -21,7 +21,7 @@ def generate_rent_roll(property_id, start_date, end_date):
     while current_date <= end_date:
         for unit in all_units:
             unit_status = unit.get_status_on_date(current_date)
-            composed_unit_number = f"P{prop.id}-{unit.unit_number}"
+            composed_unit_number = f"P{prop.id}-U{unit.unit_number}"
             if unit_status == 'inactive':
                 rent_roll_report.append({
                     "date": current_date.isoformat(),

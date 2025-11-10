@@ -48,12 +48,6 @@ This project runs on macOS, Linux, and Windows (with WSL or native Python). You 
 
 **Prerequisite:**
 - Docker and Docker Compose installed ([Download Docker](https://www.docker.com/get-started/))
-# How to Run This Project
-
-### 2. Docker (Optional)
-
-**Prerequisite:**
-- Docker and Docker Compose installed ([Download Docker](https://www.docker.com/get-started/))
 
 ```sh
 docker-compose up --build
@@ -152,7 +146,7 @@ This API provides endpoints for managing properties, units, residents, occupanci
 
 ## Shortcomings
 
-- Some edge cases and advanced reporting features are not implemented due to time constraints.
+- Some edge cases and advanced reporting features are not implemented due to time.
 - UI is basic and not fully reactive.
 - No authentication or user management.
 

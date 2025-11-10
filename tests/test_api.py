@@ -4,26 +4,8 @@ from datetime import date
 import pytest
 from src.models import Property, Unit, Resident, Occupancy, Rent, UnitStatus
 
-# Diagnostic: Ensure we are importing model classes, not Table objects
-import sqlalchemy
-assert not isinstance(Property, sqlalchemy.Table), f"Property is a Table, not a model: {type(Property)}"
-assert not isinstance(Unit, sqlalchemy.Table), f"Unit is a Table, not a model: {type(Unit)}"
-assert not isinstance(Resident, sqlalchemy.Table), f"Resident is a Table, not a model: {type(Resident)}"
-assert not isinstance(Occupancy, sqlalchemy.Table), f"Occupancy is a Table, not a model: {type(Occupancy)}"
-assert not isinstance(Rent, sqlalchemy.Table), f"Rent is a Table, not a model: {type(Rent)}"
-assert not isinstance(UnitStatus, sqlalchemy.Table), f"UnitStatus is a Table, not a model: {type(UnitStatus)}"
-from src import db
-
-# Use the client and db_session fixtures defined in conftest.py
-print("DEBUG Property type:", type(Property))
-print("DEBUG Unit type:", type(Unit))
-print("DEBUG Resident type:", type(Resident))
-print("DEBUG Occupancy type:", type(Occupancy))
-print("DEBUG Rent type:", type(Rent))
-print("DEBUG UnitStatus type:", type(UnitStatus))
-
 # Small helper to reduce repetition when creating property/unit/resident via API
-def _create_prop_unit_res(client, prop_name="P", unit_number="U1", first="F", last="L"):
+def _create_prop_unit_res(client, prop_name="P", unit_number="1", first="F", last="L"):
     p = client.post('/properties', json={"name": prop_name}).json
     u = client.post('/units', json={"property_id": p['id'], "unit_number": unit_number}).json
     r = client.post('/residents', json={"first_name": first, "last_name": last}).json
@@ -62,7 +44,7 @@ def test_rent_roll_vacant(client, db_session):
     data = response.json
     
     assert len(data) == 3 # 3 days * 1 unit
-    assert data[1]['unit_number'] == "P1-1"
+    assert data[1]['unit_number'] == "P1-U1"
     assert data[1]['resident_id'] is None
     assert data[1]['monthly_rent'] == 0
     assert data[1]['unit_status'] == 'active'

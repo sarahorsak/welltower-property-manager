@@ -100,7 +100,7 @@ class Rent(db.Model):
     """Tracks rent changes over time for a specific occupancy."""
     id = db.Column(db.Integer, primary_key=True)
     occupancy_id = db.Column(db.Integer, db.ForeignKey('occupancy.id'), nullable=False)
-    amount = db.Column(db.Integer, nullable=False) # Store in cents? Good for README.
+    amount = db.Column(db.Integer, nullable=False) 
     effective_date = db.Column(db.Date, nullable=False)
 
     occupancy = db.relationship('Occupancy', back_populates='rent_history')

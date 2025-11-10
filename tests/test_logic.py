@@ -173,8 +173,6 @@ def test_kpi_split_functions(db_session):
     assert moves['move_outs'] == 1
 
 
-# ...existing code...
-
 # --- Additional edge-case tests for generate_rent_roll and KPI logic ---
 
 def test_generate_rent_roll_no_units(db_session):

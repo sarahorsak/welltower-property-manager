@@ -3,6 +3,7 @@ from ..models import Property, Unit, UnitStatus, Occupancy, Resident, Rent
 from ..config import ValidationConfig
 from .. import db
 from datetime import date
+import re
 
 units_bp = Blueprint('units', __name__)
 
@@ -14,19 +15,22 @@ def create_unit():
     prop = db.session.get(Property, data['property_id'])
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
-    import re
+
     # Validate unit_number format and range
     unit_number = str(data['unit_number']).strip()
     if not re.match(ValidationConfig.UNIT_NUMBER_REGEX, str(unit_number)):
         return jsonify({'error': f'unit_number must match pattern {ValidationConfig.UNIT_NUMBER_REGEX}'}), 400
     if len(str(unit_number)) > ValidationConfig.UNIT_NUMBER_MAX_LENGTH:
         return jsonify({'error': f'unit_number max length is {ValidationConfig.UNIT_NUMBER_MAX_LENGTH}'}), 400
+    
     try:
         unit_number_int = int(unit_number)
     except Exception:
         return jsonify({'error': 'unit_number must be an integer'}), 400
+    
     if not (ValidationConfig.UNIT_NUMBER_MIN <= unit_number_int <= ValidationConfig.UNIT_NUMBER_MAX):
         return jsonify({'error': f'unit_number must be between {ValidationConfig.UNIT_NUMBER_MIN} and {ValidationConfig.UNIT_NUMBER_MAX}'}), 400
+    
     unit = Unit(property_id=data['property_id'], unit_number=unit_number_int)
     db.session.add(unit)
     db.session.commit()
@@ -113,12 +117,6 @@ def set_unit_status(id):
         ).first()
         if occ:
             return jsonify({'error': 'Cannot set unit to inactive while it is occupied.'}), 400
-        future_occ = Occupancy.query.filter(
-            Occupancy.unit_id == id,
-            Occupancy.move_in_date >= start_dt
-        ).first()
-        if future_occ:
-            return jsonify({'error': 'Cannot set unit to inactive before a scheduled occupancy.'}), 400
     status_rec = UnitStatus(
         unit_id=id,
         status=data['status'],
