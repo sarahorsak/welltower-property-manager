@@ -9,11 +9,11 @@ residents_bp = Blueprint('residents', __name__)
 @residents_bp.route('/residents', methods=['POST'])
 def create_resident():
     data = request.json
-    if not data or not data.get('first_name') or not data.get('last_name'):
+    if not data or not data.get('first_name') or not data.get('last_name') or not str(data['first_name']).strip() or not str(data['last_name']).strip():
         return jsonify({'error': 'first_name and last_name are required'}), 400
     # Validate name format and length
     for field in ['first_name', 'last_name']:
-        val = data[field]
+        val = str(data[field]).strip()
         if not re.match(ValidationConfig.RESIDENT_NAME_REGEX, val):
             return jsonify({'error': f'{field} must match pattern {ValidationConfig.RESIDENT_NAME_REGEX}'}), 400
         if len(val) > ValidationConfig.RESIDENT_NAME_MAX_LENGTH:

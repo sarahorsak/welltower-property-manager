@@ -9,14 +9,14 @@ units_bp = Blueprint('units', __name__)
 @units_bp.route('/units', methods=['POST'])
 def create_unit():
     data = request.json
-    if not data or not data.get('property_id') or not data.get('unit_number'):
+    if not data or not data.get('property_id') or not data.get('unit_number') or not str(data['unit_number']).strip():
         return jsonify({'error': 'property_id and unit_number are required'}), 400
     prop = db.session.get(Property, data['property_id'])
     if not prop:
         return jsonify({'error': 'Property not found'}), 404
     import re
     # Validate unit_number format and range
-    unit_number = data['unit_number']
+    unit_number = str(data['unit_number']).strip()
     if not re.match(ValidationConfig.UNIT_NUMBER_REGEX, str(unit_number)):
         return jsonify({'error': f'unit_number must match pattern {ValidationConfig.UNIT_NUMBER_REGEX}'}), 400
     if len(str(unit_number)) > ValidationConfig.UNIT_NUMBER_MAX_LENGTH:

@@ -9,10 +9,10 @@ properties_bp = Blueprint('properties', __name__)
 @properties_bp.route('/properties', methods=['POST'])
 def create_property():
     data = request.json
-    if not data or not data.get('name'):
+    if not data or not data.get('name') or not str(data['name']).strip():
         return jsonify({'error': 'Property name is required'}), 400
     # Validate property name format and length
-    name = data['name']
+    name = str(data['name']).strip()
     if not re.match(ValidationConfig.PROPERTY_NAME_REGEX, name):
         return jsonify({'error': f'Property name must match pattern {ValidationConfig.PROPERTY_NAME_REGEX}'}), 400
     if len(name) > ValidationConfig.PROPERTY_NAME_MAX_LENGTH:

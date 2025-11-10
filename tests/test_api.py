@@ -354,3 +354,21 @@ def test_occupancy_rents_history_endpoint(client, db_session):
     assert 1000 in amounts and 1100 in amounts
 
 
+@pytest.mark.parametrize("endpoint, payload, error_field", [
+    ('/properties', {"name": ""}, 'Property name'),
+    ('/properties', {"name": "   "}, 'Property name'),
+    ('/units', {"property_id": 1, "unit_number": ""}, 'unit_number'),
+    ('/units', {"property_id": 1, "unit_number": "   "}, 'unit_number'),
+    ('/residents', {"first_name": "", "last_name": "Smith"}, 'first_name'),
+    ('/residents', {"first_name": "John", "last_name": ""}, 'last_name'),
+    ('/residents', {"first_name": "   ", "last_name": "Smith"}, 'first_name'),
+    ('/residents', {"first_name": "John", "last_name": "   "}, 'last_name'),
+])
+def test_empty_and_whitespace_input_returns_400(client, db_session, endpoint, payload, error_field):
+    # For /units, ensure property exists first
+    if endpoint == '/units':
+        client.post('/properties', json={"name": "EmptyInputProp"})
+        payload["property_id"] = 1
+    resp = client.post(endpoint, json=payload)
+    assert resp.status_code == 400
+    assert error_field.lower() in resp.json.get('error', '').lower()
