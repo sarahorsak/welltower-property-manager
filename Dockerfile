@@ -19,7 +19,7 @@ COPY . .
 ENV FLASK_APP=src:create_app
 
 # Expose the port Flask runs on
-EXPOSE 5000
+EXPOSE 5001
 
 # Command to run the application:
 # 1. Run pytest to execute all tests

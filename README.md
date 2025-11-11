@@ -57,11 +57,18 @@ This project runs on macOS, Linux, and Windows (with WSL or native Python). You 
 **Prerequisite:**
 - Docker and Docker Compose installed ([Download Docker](https://www.docker.com/get-started/))
 
+Use the following command from the project root: 
 ```sh
 docker-compose up --build
 ```
 
-The API will be available at http://localhost:5000/
+Once running, he API will be available at http://localhost:5001/
+
+To stop the containers, press Ctrl+C in the terminal, then run:
+
+```sh
+docker-compose down
+```
 
 ---
 
