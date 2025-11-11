@@ -62,7 +62,7 @@ Use the following command from the project root:
 docker-compose up --build
 ```
 
-Once running, he API will be available at http://localhost:5001/
+Once running, the API will be available at http://localhost:5001/
 
 To stop the containers, press Ctrl+C in the terminal, then run:
 
