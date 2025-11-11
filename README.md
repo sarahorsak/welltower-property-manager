@@ -21,10 +21,18 @@ This project runs on macOS, Linux, and Windows (with WSL or native Python). You 
 - Python 3.9+ and pip
 - (Recommended) Virtual environment tool: `venv` or `virtualenv`
 
-1. **Clone the repository:**
+1. **Download and unzip the repository archive:**
 	```sh
-	git clone <repo-url>
+	# macOS / Linux / WSL
+	unzip welltower-property-manager.zip
 	cd welltower-property-manager
+	```
+
+	Or on Windows (PowerShell):
+	```powershell
+	# PowerShell (Windows)
+	Expand-Archive -Path .\welltower-property-manager.zip -DestinationPath .
+	Set-Location .\welltower-property-manager
 	```
 2. **Create and activate a virtual environment:**
 	```sh
